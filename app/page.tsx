@@ -73,7 +73,7 @@ export default function Home() {
       }
     } catch (err) {
       console.error('Lỗi khi tải từ vựng:', err);
-    } font-medium {
+    } finally {
       setLoadingCards(false);
     }
   };

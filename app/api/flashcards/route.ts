@@ -1,61 +1,58 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
-// 1. Lấy danh sách từ vựng đã lưu của user
-export async function GET() {
-  try {
-    const supabase = createRouteHandlerClient({ cookies });
-    const { data: { user } } = await supabase.auth.getUser();
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-    if (!user) {
-      return NextResponse.json({ error: 'Bạn cần đăng nhập để xem bộ từ' }, { status: 401 });
-    }
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-    const { data, error } = await supabase
-      .from('flashcards')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    return NextResponse.json({ success: true, data });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-// 2. Lưu một từ vựng mới vào bộ thẻ
+// 1. API Lưu từ vựng mới vào Supabase
 export async function POST(req: Request) {
   try {
-    const supabase = createRouteHandlerClient({ cookies });
-    const { data: { user } } = await supabase.auth.getUser();
+    const body = await req.json();
+    const { word, ipa, part_of_speech, partOfSpeech, vietnamese_meaning, examples_json } = body;
 
-    if (!user) {
-      return NextResponse.json({ error: 'Bạn cần đăng nhập để lưu từ vựng' }, { status: 401 });
+    if (!word) {
+      return NextResponse.json({ error: 'Từ vựng không được để trống' }, { status: 400 });
     }
-
-    const cardData = await req.json();
 
     const { data, error } = await supabase
       .from('flashcards')
       .insert([
         {
-          user_id: user.id,
-          word: cardData.word,
-          ipa: cardData.ipa,
-          part_of_speech: cardData.part_of_speech,
-          vietnamese_meaning: cardData.vietnamese_meaning,
-          examples_json: cardData.examples_json,
-          status: 'learning'
-        }
+          word,
+          ipa,
+          part_of_speech: part_of_speech || partOfSpeech,
+          vietnamese_meaning,
+          examples_json,
+        },
       ])
       .select();
 
-    if (error) throw error;
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
-    return NextResponse.json({ success: true, data: data[0] });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true, data });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || 'Lỗi hệ thống' }, { status: 500 });
+  }
+}
+
+// 2. API Lấy danh sách từ vựng đã lưu
+export async function GET() {
+  try {
+    const { data, error } = await supabase
+      .from('flashcards')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ data });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || 'Lỗi hệ thống' }, { status: 500 });
   }
 }

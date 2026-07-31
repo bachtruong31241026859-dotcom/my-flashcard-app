@@ -440,22 +440,32 @@ export default function Home() {
                 </div>
 
                 <div className="border-t border-slate-700/60 pt-4">
-                  <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Nghĩa tiếng Việt</h3>
+                  <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">NGHĨA TIẾNG VIỆT</h3>
                   <p className="text-xl font-medium text-emerald-300 mt-1">{result.vietnamese_meaning}</p>
                 </div>
 
+                {/* VÍ DỤ NGỮ CẢNH CÓ NHÃN PHÂN CẤP */}
                 {result.examples && result.examples.length > 0 && (
                   <div className="border-t border-slate-700/60 pt-4 space-y-3">
-                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Ví dụ ngữ cảnh:</h3>
+                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                      VÍ DỤ NGỮ CẢNH:
+                    </h3>
                     {result.examples.map((ex: any, idx: number) => (
-                      <div key={idx} className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800 relative">
-                        {ex.band && (
-                          <span className="text-[10px] bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold mb-1 inline-block">
-                            {ex.band}
+                      <div 
+                        key={idx} 
+                        className="bg-slate-900/60 p-4 rounded-xl border border-slate-800/80 space-y-2"
+                      >
+                        {(ex.level || ex.band) && (
+                          <span className="inline-block text-[11px] font-semibold text-emerald-400 bg-emerald-950/80 border border-emerald-800/80 px-2.5 py-1 rounded-md">
+                            {ex.level || ex.band}
                           </span>
                         )}
-                        <p className="text-slate-200 font-medium text-sm mt-0.5">"{ex.en}"</p>
-                        <p className="text-slate-400 text-xs mt-1">👉 {ex.vi}</p>
+                        <p className="text-slate-100 font-medium text-sm leading-relaxed">
+                          "{ex.en}"
+                        </p>
+                        <p className="text-slate-400 text-xs flex items-center gap-1.5 pt-0.5">
+                          <span>👉</span> {ex.vi}
+                        </p>
                       </div>
                     ))}
                   </div>
@@ -497,12 +507,28 @@ export default function Home() {
                   🟢 Đã thuộc
                 </button>
                 <button
+                  onClick={() => setCardFilter('daily')}
+                  className={`px-2.5 py-1.5 rounded-lg transition ${
+                    cardFilter === 'daily' ? 'bg-sky-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  🗣️ Giao tiếp
+                </button>
+                <button
                   onClick={() => setCardFilter('ielts')}
                   className={`px-2.5 py-1.5 rounded-lg transition ${
-                    cardFilter === 'ielts' ? 'bg-sky-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'
+                    cardFilter === 'ielts' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   🎓 IELTS
+                </button>
+                <button
+                  onClick={() => setCardFilter('business')}
+                  className={`px-2.5 py-1.5 rounded-lg transition ${
+                    cardFilter === 'business' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  💼 Công sở
                 </button>
               </div>
             </div>
@@ -587,6 +613,11 @@ export default function Home() {
                               <div className="pt-2 border-t border-slate-700/60 max-h-[130px] overflow-y-auto space-y-1.5 pr-1">
                                 {card.examples_json.map((ex: any, idx: number) => (
                                   <div key={idx} className="bg-slate-900/60 p-2 rounded-lg border border-slate-700/40">
+                                    {(ex.level || ex.band) && (
+                                      <span className="text-[10px] text-emerald-400 font-semibold mb-0.5 inline-block">
+                                        [{ex.level || ex.band}]
+                                      </span>
+                                    )}
                                     <p className="text-xs text-slate-200">"{ex.en}"</p>
                                     <p className="text-[11px] text-slate-400 mt-0.5">👉 {ex.vi}</p>
                                   </div>
@@ -705,8 +736,13 @@ export default function Home() {
                         <p className="text-2xl font-extrabold text-emerald-300">
                           {practiceQueue[practiceIndex]?.vietnamese_meaning}
                         </p>
-                        {practiceQueue[practiceIndex]?.examples_json?.[0] && (
+                        {practiceQueue[practiceIndex].examples_json?.[0] && (
                           <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-700 text-left">
+                            {(practiceQueue[practiceIndex].examples_json[0].level || practiceQueue[practiceIndex].examples_json[0].band) && (
+                              <span className="text-[10px] text-emerald-400 font-semibold mb-1 block">
+                                {practiceQueue[practiceIndex].examples_json[0].level || practiceQueue[practiceIndex].examples_json[0].band}
+                              </span>
+                            )}
                             <p className="text-xs text-slate-200">
                               "{practiceQueue[practiceIndex].examples_json[0].en}"
                             </p>
@@ -717,24 +753,26 @@ export default function Home() {
                         )}
                       </div>
 
-                      <p className="text-xs text-slate-500">Đánh giá khả năng nhớ bên dưới 👇</p>
+                      <p className="text-xs text-slate-500 font-medium">
+                        Chạm để xoay về mặt trước
+                      </p>
                     </div>
                   </div>
                 </div>
 
                 {/* NÚT ĐÁNH GIÁ (NHỚ / QUÊN) */}
-                <div className="grid grid-cols-2 gap-4 pt-2">
+                <div className="grid grid-cols-2 gap-3 pt-2">
                   <button
                     onClick={() => handleAnswer(false)}
-                    className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2"
+                    className="py-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-xl font-bold transition flex items-center justify-center gap-2"
                   >
-                    ❌ Chưa Nhớ
+                    ❌ Chưa thuộc
                   </button>
                   <button
                     onClick={() => handleAnswer(true)}
-                    className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                    className="py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl font-bold transition flex items-center justify-center gap-2 shadow-lg"
                   >
-                    ✅ Đã Nhớ
+                    ✅ Đã thuộc
                   </button>
                 </div>
               </div>
@@ -743,58 +781,72 @@ export default function Home() {
         )}
       </main>
 
-      {/* MODAL ĐĂNG NHẬP / ĐĂNG KÝ */}
+      {/* AUTH MODAL */}
       {showAuthModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md relative shadow-2xl">
             <button
               onClick={() => setShowAuthModal(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white text-lg font-bold"
+              className="absolute top-4 right-4 text-slate-400 hover:text-white text-lg"
             >
               ✕
             </button>
-            <h3 className="text-xl font-bold text-white mb-4">
-              {authMode === 'login' ? '🔑 Đăng Nhập' : '📝 Đăng Ký Tài Khoản'}
-            </h3>
+            <h2 className="text-xl font-bold text-white mb-4">
+              {authMode === 'login' ? '🔑 Đăng nhập' : '📝 Đăng ký'}
+            </h2>
             <form onSubmit={handleAuthSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Email</label>
+                <label className="block text-xs text-slate-400 mb-1">Email</label>
                 <input
                   type="email"
-                  required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
                   placeholder="your@email.com"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Mật khẩu</label>
+                <label className="block text-xs text-slate-400 mb-1">Mật khẩu</label>
                 <input
                   type="password"
-                  required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
                   placeholder="••••••••"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500"
                 />
               </div>
               <button
                 type="submit"
                 disabled={authLoading}
-                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 rounded-xl transition disabled:opacity-50"
+                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-2.5 rounded-xl transition disabled:opacity-50"
               >
-                {authLoading ? 'Đang xử lý...' : authMode === 'login' ? 'Đăng Nhập' : 'Đăng Ký'}
+                {authLoading ? 'Đang xử lý...' : authMode === 'login' ? 'Đăng nhập' : 'Đăng ký'}
               </button>
             </form>
-            <div className="mt-4 text-center">
-              <button
-                type="button"
-                onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
-                className="text-xs text-slate-400 hover:text-emerald-400 underline"
-              >
-                {authMode === 'login' ? 'Chưa có tài khoản? Đăng ký ngay' : 'Đã có tài khoản? Đăng nhập'}
-              </button>
+            <div className="mt-4 text-center text-xs text-slate-400">
+              {authMode === 'login' ? (
+                <>
+                  Chưa có tài khoản?{' '}
+                  <button
+                    onClick={() => setAuthMode('signup')}
+                    className="text-emerald-400 hover:underline font-semibold"
+                  >
+                    Đăng ký ngay
+                  </button>
+                </>
+              ) : (
+                <>
+                  Đã có tài khoản?{' '}
+                  <button
+                    onClick={() => setAuthMode('login')}
+                    className="text-emerald-400 hover:underline font-semibold"
+                  >
+                    Đăng nhập
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

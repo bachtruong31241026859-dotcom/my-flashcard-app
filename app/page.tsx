@@ -14,7 +14,11 @@ export default function Home() {
   const [waterDrops, setWaterDrops] = useState(145);
   const [isEditing, setIsEditing] = useState(false);
 
-  // Dữ liệu từ vựng hiện tại (mặc định hoặc từ AI trả về)
+  // State hỗ trợ lưu từ vựng vào Supabase
+  const [saving, setSaving] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+
+  // Dữ liệu từ vựng hiện tại
   const [currentWord, setCurrentWord] = useState<any>({
     word: 'mitigate',
     ipa: '/ˈmɪt.ɪ.ɡeɪt/',
@@ -32,12 +36,13 @@ export default function Home() {
   const [customMeaning, setCustomMeaning] = useState(currentWord.vietnamese_meaning);
   const [cacheSource, setCacheSource] = useState<string | null>(null);
 
-  // HÀM GỌI API TRA TỪ THẬT TỪ GEMINI / SUPABASE
+  // 1. HÀM GỌI GROQ AI TRA TỪ
   const handleSearch = async () => {
     if (!inputWord.trim()) return;
     setLoading(true);
     setErrorMessage('');
     setIsFlipped(false);
+    setIsSaved(false); // Reset trạng thái đã lưu khi tra từ mới
 
     try {
       const response = await fetch('/api/generate-word', {
@@ -45,7 +50,6 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           word: inputWord.trim(),
-          user_id: '00000000-0000-0000-0000-000000000001' // ID người dùng demo
         }),
       });
 
@@ -57,7 +61,7 @@ export default function Home() {
 
       setCurrentWord(result.data);
       setCustomMeaning(result.data.vietnamese_meaning);
-      setCacheSource(result.source === 'cache_hit' ? 'Global Cache Hit (Miễn phí API)' : 'AI Gemini vừa phân tích xong!');
+      setCacheSource(result.source === 'cache_hit' ? 'Global Cache Hit (Miễn phí API)' : 'Groq AI vừa phân tích!');
       
       if (role === 'free' && result.source !== 'cache_hit') {
         setFreeWordCount((prev) => Math.min(prev + 1, 3));
@@ -66,6 +70,43 @@ export default function Home() {
       setErrorMessage(err.message || 'Không thể kết nối đến máy chủ AI');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 2. HÀM LƯU TỪ VỰNG VÀO SUPABASE
+  const handleSaveCard = async () => {
+    if (!currentWord || isSaved) return;
+
+    setSaving(true);
+    try {
+      // Đính kèm nghĩa tiếng Việt nếu người dùng có chỉnh sửa tay
+      const dataToSave = {
+        ...currentWord,
+        vietnamese_meaning: customMeaning || currentWord.vietnamese_meaning
+      };
+
+      const response = await fetch('/api/flashcards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dataToSave),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          alert('⚠️ Bạn cần đăng nhập tài khoản Supabase để lưu từ vựng này!');
+        } else {
+          alert('⚠️ ' + (result.error || 'Không thể lưu từ vựng vào DB'));
+        }
+        return;
+      }
+
+      setIsSaved(true);
+    } catch (err: any) {
+      alert('⚠️ Đã xảy ra lỗi kết nối khi lưu từ.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -216,10 +257,30 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* Nút lật thẻ */}
+                {/* Chân thẻ: Nút lật thẻ & Nút Lưu vào Supabase */}
                 <div className="pt-4 border-t border-slate-700/50 flex justify-between items-center">
                   <button onClick={() => setIsFlipped(!isFlipped)} className="flex items-center gap-2 text-slate-400 hover:text-emerald-400 text-sm transition-all">
                     <RotateCw className="w-4 h-4" /> Lật mặt thẻ
+                  </button>
+
+                  <button
+                    onClick={handleSaveCard}
+                    disabled={saving || isSaved}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                      isSaved
+                        ? 'bg-emerald-950 text-emerald-400 border border-emerald-700/60 cursor-default'
+                        : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md hover:shadow-emerald-500/20'
+                    }`}
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Đang lưu...
+                      </>
+                    ) : isSaved ? (
+                      '✓ Đã lưu vào Bộ thẻ'
+                    ) : (
+                      '+ Lưu vào Bộ thẻ'
+                    )}
                   </button>
                 </div>
               </div>

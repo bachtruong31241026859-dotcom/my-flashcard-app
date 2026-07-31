@@ -10,13 +10,13 @@ export async function POST(req: Request) {
 
     const cleanWord = word.trim().toLowerCase();
     let apiKey = process.env.GEMINI_API_KEY || '';
-
-    // Tự động làm sạch Key (xóa khoảng trắng hoặc dấu ngoặc kép nếu lỡ dán thừa)
+    
+    // Tự động dọn dẹp ký tự thừa hoặc dấu ngoặc kép nếu có
     apiKey = apiKey.trim().replace(/^["']|["']$/g, '');
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'Chưa tìm thấy GEMINI_API_KEY trên Vercel. Hãy kiểm tra Environment Variables!' },
+        { error: 'Chưa tìm thấy GEMINI_API_KEY trên Vercel.' },
         { status: 500 }
       );
     }
@@ -36,18 +36,19 @@ export async function POST(req: Request) {
   }
 }`;
 
-    const models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+    // Thử các tên model chính thức của Gemini
+    const models = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash'];
     let lastErrorDetails = '';
 
     for (const model of models) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+      // ĐIỂM MẤT CHỐT: Gắn thẳng API Key vào tham số ?key= của URL
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
       
       try {
         const res = await fetch(url, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey // Gửi Key qua Header an toàn
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }]

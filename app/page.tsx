@@ -7,9 +7,12 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+type ModeType = 'daily' | 'ielts' | 'business';
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'search' | 'saved'>('search');
   const [word, setWord] = useState('');
+  const [mode, setMode] = useState<ModeType>('ielts');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [saving, setSaving] = useState(false);
@@ -28,7 +31,6 @@ export default function Home() {
   const [loadingCards, setLoadingCards] = useState(false);
   const [flippedCardId, setFlippedCardId] = useState<string | null>(null);
 
-  // Kiểm tra trạng thái đăng nhập khi load trang
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user);
@@ -43,7 +45,6 @@ export default function Home() {
     };
   }, []);
 
-  // Tải danh sách từ vựng đã lưu khi chuyển sang Tab "Bộ Thẻ"
   useEffect(() => {
     if (activeTab === 'saved') {
       fetchSavedCards();
@@ -66,7 +67,6 @@ export default function Home() {
     }
   };
 
-  // Tra từ AI (Đã cập nhật đúng endpoint /api/groq)
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!word.trim()) return;
@@ -79,13 +79,12 @@ export default function Home() {
       const res = await fetch('/api/groq', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ word }),
+        body: JSON.stringify({ word, mode }),
       });
 
       if (!res.ok) {
         const errText = await res.text();
-        console.error('Lỗi Server:', errText);
-        alert(`Lỗi Server (${res.status}): Vui lòng kiểm tra lại file API hoặc GROQ_API_KEY!`);
+        alert(`Lỗi Server (${res.status}): Vui lòng kiểm tra lại file API!`);
         return;
       }
 
@@ -96,25 +95,26 @@ export default function Home() {
         alert(data.error || 'Có lỗi xảy ra khi tra từ!');
       }
     } catch (err: any) {
-      console.error('Fetch error:', err);
       alert(`Lỗi kết nối: ${err.message || 'Không thể kết nối tới server AI'}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // Lưu từ vào Supabase
   const handleSave = async () => {
     if (!result) return;
     setSaving(true);
     try {
+      // Đính kèm thông tin mode vào part_of_speech hoặc ví dụ để hiển thị badge
+      const displayTag = mode === 'daily' ? 'Giao tiếp' : mode === 'business' ? 'Công sở' : 'IELTS';
+      
       const res = await fetch('/api/flashcards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           word: result.word,
           ipa: result.ipa,
-          part_of_speech: result.partOfSpeech || result.part_of_speech,
+          part_of_speech: `${result.partOfSpeech || result.part_of_speech || 'Vocabulary'} • [${displayTag}]`,
           vietnamese_meaning: result.vietnamese_meaning,
           examples_json: result.examples,
           user_id: user ? user.id : null,
@@ -134,7 +134,6 @@ export default function Home() {
     }
   };
 
-  // Xóa từ vựng khỏi Supabase
   const handleDeleteCard = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm('Bạn có chắc muốn xóa từ vựng này khỏi bộ thẻ?')) return;
@@ -152,7 +151,6 @@ export default function Home() {
     }
   };
 
-  // Phát âm từ vựng
   const speakWord = (text: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if ('speechSynthesis' in window) {
@@ -162,7 +160,6 @@ export default function Home() {
     }
   };
 
-  // Xử lý Auth (Đăng nhập / Đăng ký)
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthLoading(true);
@@ -193,16 +190,14 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans">
-      {/* Header / Navbar */}
       <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-40 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <div className="text-2xl">🌲</div>
+          <div className="text-2xl">⚡</div>
           <h1 className="text-lg font-bold bg-gradient-to-r from-emerald-400 to-teal-200 bg-clip-text text-transparent">
-            IELTS Flashcard AI
+            Smart Flashcard AI
           </h1>
         </div>
 
-        {/* Tab Selector */}
         <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700">
           <button
             onClick={() => setActiveTab('search')}
@@ -226,7 +221,6 @@ export default function Home() {
           </button>
         </div>
 
-        {/* User Auth Section */}
         <div>
           {user ? (
             <div className="flex items-center space-x-3">
@@ -245,23 +239,62 @@ export default function Home() {
               onClick={() => setShowAuthModal(true)}
               className="px-3.5 py-1.5 text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-lg hover:bg-emerald-500 hover:text-slate-950 transition"
             >
-              🔑 Đăng nhập / Đăng ký
+              🔑 Đăng nhập
             </button>
           )}
         </div>
       </header>
 
-      {/* Main Content Area */}
       <main className="flex-1 max-w-4xl w-full mx-auto p-4 md:p-6">
-        {/* TAB 1: TRA TỪ AI */}
         {activeTab === 'search' && (
           <div className="space-y-6">
+            {/* Thanh chọn Chế độ học (Learning Mode Selector) */}
+            <div className="bg-slate-800/60 p-2 rounded-2xl border border-slate-700/80 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs text-slate-400 font-medium px-2">🎯 Chế độ học:</span>
+              <div className="flex gap-1.5 flex-1">
+                <button
+                  type="button"
+                  onClick={() => setMode('daily')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition ${
+                    mode === 'daily'
+                      ? 'bg-sky-500 text-slate-950 shadow-md'
+                      : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  🗣️ Giao tiếp đời thường
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('ielts')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition ${
+                    mode === 'ielts'
+                      ? 'bg-emerald-500 text-slate-950 shadow-md'
+                      : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  🎓 Ôn thi IELTS
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('business')}
+                  className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition ${
+                    mode === 'business'
+                      ? 'bg-amber-500 text-slate-950 shadow-md'
+                      : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  💼 Tiếng Anh Công sở
+                </button>
+              </div>
+            </div>
+
+            {/* Form Tra từ */}
             <form onSubmit={handleSearch} className="flex gap-2">
               <input
                 type="text"
                 value={word}
                 onChange={(e) => setWord(e.target.value)}
-                placeholder="Nhập từ vựng tiếng Anh (Ví dụ: Mitigate, Resilience...)"
+                placeholder="Nhập từ vựng (Ví dụ: bitch, mitigate, negotiate...)"
                 className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
               />
               <button
@@ -273,6 +306,7 @@ export default function Home() {
               </button>
             </form>
 
+            {/* Kết quả hiển thị */}
             {result && (
               <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-6 shadow-xl space-y-4">
                 <div className="flex justify-between items-start">
@@ -313,16 +347,20 @@ export default function Home() {
 
                 {result.examples && result.examples.length > 0 && (
                   <div className="border-t border-slate-700/60 pt-4 space-y-3">
-                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Ví dụ ngữ cảnh IELTS</h3>
+                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                      Ví dụ ứng dụng ({mode === 'daily' ? 'Giao tiếp' : mode === 'business' ? 'Công sở' : 'IELTS'}):
+                    </h3>
                     {result.examples.map((ex: any, idx: number) => (
-                      <div key={idx} className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800">
-                        <p className="text-slate-200 italic font-serif">"{ex.en}"</p>
-                        <p className="text-slate-400 text-sm mt-1">👉 {ex.vi}</p>
-                        {ex.band && (
-                          <span className="inline-block text-[10px] bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded mt-2">
-                            IELTS Band {ex.band}
-                          </span>
-                        )}
+                      <div key={idx} className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800 relative">
+                        <div className="flex justify-between items-center mb-1">
+                          {ex.band && (
+                            <span className="text-[10px] bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">
+                              {ex.band}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-slate-200 font-medium text-sm mt-1">"{ex.en}"</p>
+                        <p className="text-slate-400 text-xs mt-1">👉 {ex.vi}</p>
                       </div>
                     ))}
                   </div>
@@ -332,7 +370,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: BỘ THẺ ĐÃ LƯU */}
+        {/* TAB BỘ THẺ ĐÃ LƯU */}
         {activeTab === 'saved' && (
           <div className="space-y-4">
             <div className="flex justify-between items-center">
@@ -354,7 +392,7 @@ export default function Home() {
                   onClick={() => setActiveTab('search')}
                   className="mt-3 text-sm text-emerald-400 hover:underline"
                 >
-                  Tra từ ngay để lưu bộ thẻ đầu tiên!
+                  Tra từ ngay để tạo thẻ đầu tiên!
                 </button>
               </div>
             ) : (
@@ -365,15 +403,14 @@ export default function Home() {
                     <div
                       key={card.id}
                       onClick={() => setFlippedCardId(isFlipped ? null : card.id)}
-                      className={`cursor-pointer bg-slate-800 border rounded-2xl p-5 transition-all duration-300 relative flex flex-col justify-between min-h-[200px] ${
+                      className={`cursor-pointer bg-slate-800 border rounded-2xl p-5 transition-all duration-300 relative flex flex-col justify-between min-h-[250px] ${
                         isFlipped
-                          ? 'border-emerald-500/50 bg-slate-800/90 shadow-lg'
+                          ? 'border-emerald-500/50 bg-slate-800/95 shadow-lg'
                           : 'border-slate-700 hover:border-slate-600'
                       }`}
                     >
-                      {/* Top Action Buttons */}
                       <div className="flex justify-between items-center w-full z-10">
-                        <span className="text-[11px] uppercase font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2 py-0.5 rounded">
+                        <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2 py-0.5 rounded">
                           {card.part_of_speech || 'Vocabulary'}
                         </span>
                         <div className="flex items-center gap-2">
@@ -394,30 +431,42 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* Card Body (Mặt trước vs Mặt sau) */}
                       {!isFlipped ? (
-                        <div className="my-auto text-center py-4">
+                        <div className="my-auto text-center py-6">
                           <h3 className="text-3xl font-extrabold text-white tracking-wide">{card.word}</h3>
                           {card.ipa && <p className="text-slate-400 font-mono text-sm mt-1">{card.ipa}</p>}
-                          <p className="text-xs text-slate-500 mt-3 font-medium">👆 Chạm để lật xem nghĩa</p>
+                          <p className="text-xs text-slate-500 mt-4 font-medium">👆 Chạm để lật xem nghĩa & ví dụ</p>
                         </div>
                       ) : (
-                        <div className="my-auto py-2 space-y-2">
+                        <div className="my-auto py-2 space-y-3">
                           <div>
                             <span className="text-[10px] text-slate-400 uppercase font-semibold">Nghĩa tiếng Việt</span>
                             <p className="text-lg font-bold text-emerald-300">{card.vietnamese_meaning}</p>
                           </div>
+
                           {card.examples_json && card.examples_json.length > 0 && (
-                            <div className="pt-2 border-t border-slate-700/50">
-                              <p className="text-xs italic text-slate-300">"{card.examples_json[0].en}"</p>
-                              <p className="text-xs text-slate-400 mt-0.5">👉 {card.examples_json[0].vi}</p>
+                            <div className="pt-2 border-t border-slate-700/60 space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                              <span className="text-[10px] text-slate-400 uppercase font-semibold block mb-1">
+                                Ví dụ ứng dụng:
+                              </span>
+                              {card.examples_json.map((ex: any, idx: number) => (
+                                <div key={idx} className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/50">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="text-[9px] bg-slate-800 text-emerald-400 border border-slate-700 px-1.5 py-0.5 rounded font-semibold">
+                                      {ex.band || 'Ví dụ'}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-200">"{ex.en}"</p>
+                                  <p className="text-[11px] text-slate-400 mt-0.5">👉 {ex.vi}</p>
+                                </div>
+                              ))}
                             </div>
                           )}
                         </div>
                       )}
 
-                      <div className="text-[10px] text-right text-slate-500">
-                        {isFlipped ? 'Lật lại' : 'Mặt trước'}
+                      <div className="text-[10px] text-right text-slate-500 mt-2">
+                        {isFlipped ? 'Chạm để lật lại' : 'Mặt trước'}
                       </div>
                     </div>
                   );
@@ -428,7 +477,7 @@ export default function Home() {
         )}
       </main>
 
-      {/* AUTH MODAL (Đăng nhập / Đăng ký) */}
+      {/* AUTH MODAL */}
       {showAuthModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-800 border border-slate-700 rounded-2xl max-w-sm w-full p-6 shadow-2xl relative">

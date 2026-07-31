@@ -9,7 +9,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 type ModeType = 'daily' | 'ielts' | 'business';
 type TabType = 'search' | 'saved' | 'practice';
-type FilterType = 'all' | 'daily' | 'ielts' | 'business';
+type FilterType = 'all' | 'daily' | 'ielts' | 'business' | 'learning' | 'mastered';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabType>('search');
@@ -42,7 +42,6 @@ export default function Home() {
   const [forgottenCount, setForgottenCount] = useState(0);
   const [practiceFinished, setPracticeFinished] = useState(false);
 
-  // Kiểm tra trạng thái đăng nhập khi load trang
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user);
@@ -57,7 +56,6 @@ export default function Home() {
     };
   }, []);
 
-  // Tải danh sách từ vựng khi chuyển Tab
   useEffect(() => {
     if (activeTab === 'saved' || activeTab === 'practice') {
       fetchSavedCards();
@@ -80,7 +78,6 @@ export default function Home() {
     }
   };
 
-  // Tra từ AI
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!word.trim()) return;
@@ -114,13 +111,12 @@ export default function Home() {
     }
   };
 
-  // Lưu từ vào Supabase
   const handleSave = async () => {
     if (!result) return;
     setSaving(true);
     try {
       const displayTag = mode === 'daily' ? 'Giao tiếp' : mode === 'business' ? 'Công sở' : 'IELTS';
-      
+
       const res = await fetch('/api/flashcards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -137,6 +133,7 @@ export default function Home() {
       const data = await res.json();
       if (data.success) {
         setSavedSuccess(true);
+        fetchSavedCards();
       } else {
         alert('Lỗi khi lưu: ' + data.error);
       }
@@ -147,7 +144,6 @@ export default function Home() {
     }
   };
 
-  // Xóa từ vựng
   const handleDeleteCard = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm('Bạn có chắc muốn xóa từ vựng này khỏi bộ thẻ?')) return;
@@ -165,7 +161,6 @@ export default function Home() {
     }
   };
 
-  // Phát âm
   const speakWord = (text: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if ('speechSynthesis' in window) {
@@ -175,7 +170,6 @@ export default function Home() {
     }
   };
 
-  // Auth Submit
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthLoading(true);
@@ -204,27 +198,36 @@ export default function Home() {
     setUser(null);
   };
 
-  // Lọc danh sách thẻ đã lưu
+  // Bộ lọc thẻ
   const filteredCards = savedCards.filter((card) => {
     if (cardFilter === 'all') return true;
+    if (cardFilter === 'learning') return card.status !== 'mastered';
+    if (cardFilter === 'mastered') return card.status === 'mastered';
+
     const tagMap = {
       daily: '[Giao tiếp]',
       ielts: '[IELTS]',
       business: '[Công sở]',
     };
-    return card.part_of_speech?.includes(tagMap[cardFilter]);
+    return card.part_of_speech?.includes(tagMap[cardFilter as keyof typeof tagMap]);
   });
 
-  // Bắt đầu Luyện tập
+  // Thuật toán Ôn tập thông minh (Ưu tiên từ 'learning' & lâu chưa ôn)
   const startPractice = () => {
     if (savedCards.length === 0) return;
-    const cardsToShuffle = cardFilter === 'all' ? savedCards : filteredCards;
-    if (cardsToShuffle.length === 0) {
-      alert('Không có từ vựng nào thuộc chế độ lọc này để luyện tập!');
-      return;
-    }
-    const shuffled = [...cardsToShuffle].sort(() => Math.random() - 0.5);
-    setPracticeQueue(shuffled);
+
+    const cardsToPractice = [...savedCards].sort((a, b) => {
+      // Ưu tiên 1: Từ chưa thuộc ('learning') đứng trước từ đã thuộc ('mastered')
+      if ((a.status || 'learning') === 'learning' && b.status === 'mastered') return -1;
+      if (a.status === 'mastered' && (b.status || 'learning') === 'learning') return 1;
+
+      // Ưu tiên 2: Từ nào lâu chưa ôn tập hơn sẽ đứng trước
+      const timeA = new Date(a.last_reviewed || 0).getTime();
+      const timeB = new Date(b.last_reviewed || 0).getTime();
+      return timeA - timeB;
+    });
+
+    setPracticeQueue(cardsToPractice);
     setPracticeIndex(0);
     setIsPracticeFlipped(false);
     setRememberedCount(0);
@@ -232,13 +235,43 @@ export default function Home() {
     setPracticeFinished(false);
   };
 
-  const handleAnswer = (remembered: boolean) => {
+  // Xử lý khi bấm Nhớ/Quên -> Lưu ngay vào Database
+  const handleAnswer = async (remembered: boolean) => {
+    const currentCard = practiceQueue[practiceIndex];
+    if (!currentCard) return;
+
+    const newStatus = remembered ? 'mastered' : 'learning';
+
     if (remembered) {
       setRememberedCount((prev) => prev + 1);
     } else {
       setForgottenCount((prev) => prev + 1);
     }
 
+    // Cập nhật lên Database Supabase
+    try {
+      await fetch('/api/flashcards', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: currentCard.id,
+          status: newStatus,
+        }),
+      });
+
+      // Cập nhật lại state local
+      setSavedCards((prev) =>
+        prev.map((card) =>
+          card.id === currentCard.id
+            ? { ...card, status: newStatus, last_reviewed: new Date().toISOString() }
+            : card
+        )
+      );
+    } catch (err) {
+      console.error('Không thể lưu trạng thái ôn tập:', err);
+    }
+
+    // Chuyển sang thẻ tiếp theo
     if (practiceIndex + 1 < practiceQueue.length) {
       setIsPracticeFlipped(false);
       setPracticeIndex((prev) => prev + 1);
@@ -322,7 +355,6 @@ export default function Home() {
         {/* TAB 1: TRA TỪ AI */}
         {activeTab === 'search' && (
           <div className="space-y-6">
-            {/* Mode Selector */}
             <div className="bg-slate-800/60 p-2 rounded-2xl border border-slate-700/80 flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs text-slate-400 font-medium px-2">🎯 Chế độ học:</span>
               <div className="flex gap-1.5 flex-1">
@@ -362,13 +394,12 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Tra từ Input */}
             <form onSubmit={handleSearch} className="flex gap-2">
               <input
                 type="text"
                 value={word}
                 onChange={(e) => setWord(e.target.value)}
-                placeholder="Nhập từ vựng (Ví dụ: bitch, mitigate, negotiate...)"
+                placeholder="Nhập từ vựng (Ví dụ: mitigate, negotiate, slang...)"
                 className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
               />
               <button
@@ -380,7 +411,6 @@ export default function Home() {
               </button>
             </form>
 
-            {/* Kết quả Tra Từ */}
             {result && (
               <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-6 shadow-xl space-y-4">
                 <div className="flex justify-between items-start">
@@ -421,19 +451,15 @@ export default function Home() {
 
                 {result.examples && result.examples.length > 0 && (
                   <div className="border-t border-slate-700/60 pt-4 space-y-3">
-                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                      Ví dụ ngữ cảnh ({mode === 'daily' ? 'Giao tiếp' : mode === 'business' ? 'Công sở' : 'IELTS'}):
-                    </h3>
+                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Ví dụ ngữ cảnh:</h3>
                     {result.examples.map((ex: any, idx: number) => (
                       <div key={idx} className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800 relative">
-                        <div className="flex justify-between items-center mb-1">
-                          {ex.band && (
-                            <span className="text-[10px] bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold">
-                              {ex.band}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-slate-200 font-medium text-sm mt-1">"{ex.en}"</p>
+                        {ex.band && (
+                          <span className="text-[10px] bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded font-bold mb-1 inline-block">
+                            {ex.band}
+                          </span>
+                        )}
+                        <p className="text-slate-200 font-medium text-sm mt-0.5">"{ex.en}"</p>
                         <p className="text-slate-400 text-xs mt-1">👉 {ex.vi}</p>
                       </div>
                     ))}
@@ -444,53 +470,45 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 2: BỘ THẺ ĐÃ LƯU (BỘ LỌC + HIỆU ỨNG 3D FLIP) */}
+        {/* TAB 2: BỘ THẺ ĐÃ LƯU */}
         {activeTab === 'saved' && (
           <div className="space-y-6">
             <div className="flex flex-wrap justify-between items-center gap-4">
               <h2 className="text-xl font-bold text-white">🎴 Thẻ từ vựng của bạn</h2>
 
-              {/* BỘ LỌC THẺ (FILTER CARDS) */}
-              <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs font-medium">
+              {/* BỘ LỌC NÂNG CAO */}
+              <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs font-medium flex-wrap gap-1">
                 <button
                   onClick={() => setCardFilter('all')}
-                  className={`px-3 py-1.5 rounded-lg transition ${
-                    cardFilter === 'all'
-                      ? 'bg-emerald-500 text-slate-950 font-bold'
-                      : 'text-slate-400 hover:text-slate-200'
+                  className={`px-2.5 py-1.5 rounded-lg transition ${
+                    cardFilter === 'all' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   Tất cả ({savedCards.length})
                 </button>
                 <button
-                  onClick={() => setCardFilter('daily')}
-                  className={`px-3 py-1.5 rounded-lg transition ${
-                    cardFilter === 'daily'
-                      ? 'bg-sky-500 text-slate-950 font-bold'
-                      : 'text-slate-400 hover:text-slate-200'
+                  onClick={() => setCardFilter('learning')}
+                  className={`px-2.5 py-1.5 rounded-lg transition ${
+                    cardFilter === 'learning' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  🗣️ Giao tiếp
+                  🟡 Đang học
+                </button>
+                <button
+                  onClick={() => setCardFilter('mastered')}
+                  className={`px-2.5 py-1.5 rounded-lg transition ${
+                    cardFilter === 'mastered' ? 'bg-emerald-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  🟢 Đã thuộc
                 </button>
                 <button
                   onClick={() => setCardFilter('ielts')}
-                  className={`px-3 py-1.5 rounded-lg transition ${
-                    cardFilter === 'ielts'
-                      ? 'bg-emerald-500 text-slate-950 font-bold'
-                      : 'text-slate-400 hover:text-slate-200'
+                  className={`px-2.5 py-1.5 rounded-lg transition ${
+                    cardFilter === 'ielts' ? 'bg-sky-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   🎓 IELTS
-                </button>
-                <button
-                  onClick={() => setCardFilter('business')}
-                  className={`px-3 py-1.5 rounded-lg transition ${
-                    cardFilter === 'business'
-                      ? 'bg-amber-500 text-slate-950 font-bold'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  💼 Công sở
                 </button>
               </div>
             </div>
@@ -505,8 +523,9 @@ export default function Home() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filteredCards.map((card) => {
                   const isFlipped = flippedCardId === card.id;
+                  const isMastered = card.status === 'mastered';
+
                   return (
-                    /* CONTAINER HIỆU ỨNG LẬT 3D */
                     <div key={card.id} className="[perspective:1000px] h-[280px]">
                       <div
                         onClick={() => setFlippedCardId(isFlipped ? null : card.id)}
@@ -514,24 +533,33 @@ export default function Home() {
                           isFlipped ? '[transform:rotateY(180deg)]' : ''
                         }`}
                       >
-                        {/* MẶT TRƯỚC (FRONT) */}
+                        {/* MẶT TRƯỚC */}
                         <div className="absolute inset-0 w-full h-full bg-slate-800 border border-slate-700 hover:border-slate-600 rounded-2xl p-5 flex flex-col justify-between [backface-visibility:hidden]">
                           <div className="flex justify-between items-center w-full">
                             <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2 py-0.5 rounded">
                               {card.part_of_speech || 'Vocabulary'}
                             </span>
                             <div className="flex items-center gap-2">
+                              {/* STATUS BADGE */}
+                              <span
+                                className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                                  isMastered
+                                    ? 'bg-emerald-950/80 text-emerald-400 border-emerald-700'
+                                    : 'bg-amber-950/80 text-amber-400 border-amber-700'
+                                }`}
+                              >
+                                {isMastered ? '🟢 Đã thuộc' : '🟡 Đang học'}
+                              </span>
+
                               <button
                                 onClick={(e) => speakWord(card.word, e)}
                                 className="text-xs bg-slate-700/60 hover:bg-slate-600 p-1.5 rounded-full text-emerald-400"
-                                title="Phát âm"
                               >
                                 🔊
                               </button>
                               <button
                                 onClick={(e) => handleDeleteCard(card.id, e)}
                                 className="text-xs text-slate-500 hover:text-red-400 p-1.5"
-                                title="Xóa thẻ"
                               >
                                 🗑️
                               </button>
@@ -548,7 +576,7 @@ export default function Home() {
                           </div>
                         </div>
 
-                        {/* MẶT SAU (BACK) */}
+                        {/* MẶT SAU */}
                         <div className="absolute inset-0 w-full h-full bg-slate-800/95 border border-emerald-500/50 rounded-2xl p-5 flex flex-col justify-between [transform:rotateY(180deg)] [backface-visibility:hidden]">
                           <div className="flex justify-between items-center w-full">
                             <span className="text-[10px] text-slate-400 uppercase font-semibold">Nghĩa & Ví dụ</span>
@@ -587,44 +615,40 @@ export default function Home() {
           </div>
         )}
 
-        {/* TAB 3: CHẾ ĐỘ LUYỆN ÔN TẬP (FLASHCARD REVIEW MODE) */}
+        {/* TAB 3: CHẾ ĐỘ LUYỆN ÔN TẬP THÔNG MINH */}
         {activeTab === 'practice' && (
           <div className="space-y-6 max-w-xl mx-auto">
             <div className="flex justify-between items-center">
-              <h2 className="text-xl font-bold text-white">🎮 Luyện Tập Ôn Thẻ</h2>
+              <div>
+                <h2 className="text-xl font-bold text-white">🎮 Luyện Tập Ôn Thẻ</h2>
+                <p className="text-xs text-slate-400">Thuật toán ưu tiên đẩy các từ chưa thuộc lên trước</p>
+              </div>
               <button
                 onClick={startPractice}
                 className="text-xs bg-slate-800 hover:bg-slate-700 text-emerald-400 px-3 py-1.5 rounded-lg border border-slate-700 transition"
               >
-                🔄 Tráo Thẻ Mới
+                🔄 Ôn Lại Từ Đầu
               </button>
             </div>
 
             {savedCards.length === 0 ? (
               <div className="text-center py-16 bg-slate-800/40 rounded-2xl border border-slate-800">
                 <p className="text-slate-400 text-base">Bạn cần lưu ít nhất 1 từ vựng để bắt đầu luyện tập.</p>
-                <button
-                  onClick={() => setActiveTab('search')}
-                  className="mt-3 text-sm text-emerald-400 hover:underline"
-                >
-                  Tra từ ngay để tạo thẻ!
-                </button>
               </div>
             ) : practiceFinished ? (
-              /* MÀN HÌNH KẾT QUẢ */
               <div className="bg-slate-800 border border-slate-700 rounded-2xl p-8 text-center space-y-4 shadow-2xl">
                 <div className="text-5xl">🎉</div>
                 <h3 className="text-2xl font-extrabold text-white">Hoàn Thành Buổi Ôn Tập!</h3>
-                <p className="text-slate-400 text-sm">Dưới đây là thống kê kết quả ghi nhớ của bạn:</p>
+                <p className="text-slate-400 text-sm">Trạng thái ghi nhớ của các từ đã được đồng bộ vào Database:</p>
 
                 <div className="grid grid-cols-2 gap-4 my-6">
                   <div className="bg-slate-900/80 p-4 rounded-xl border border-emerald-500/30">
                     <span className="text-2xl font-black text-emerald-400">{rememberedCount}</span>
-                    <p className="text-xs text-slate-400 mt-1">Đã Nhớ Đúng 🟢</p>
+                    <p className="text-xs text-slate-400 mt-1">Đánh dấu Đã thuộc 🟢</p>
                   </div>
                   <div className="bg-slate-900/80 p-4 rounded-xl border border-red-500/30">
                     <span className="text-2xl font-black text-red-400">{forgottenCount}</span>
-                    <p className="text-xs text-slate-400 mt-1">Cần Ôn Lại 🔴</p>
+                    <p className="text-xs text-slate-400 mt-1">Cần Ôn Tiếp 🟡</p>
                   </div>
                 </div>
 
@@ -632,16 +656,16 @@ export default function Home() {
                   onClick={startPractice}
                   className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 rounded-xl transition shadow-lg"
                 >
-                  🔁 Luyện Tập Tiếp
+                  🔁 Ôn Lại Tiếp
                 </button>
               </div>
             ) : practiceQueue.length > 0 ? (
-              /* THẺ ĐANG LUYỆN TẬP */
               <div className="space-y-4">
-                {/* Thanh tiến trình Progress Bar */}
                 <div className="flex justify-between text-xs text-slate-400 mb-1">
                   <span>Thẻ thứ {practiceIndex + 1} / {practiceQueue.length}</span>
-                  <span>Tỷ lệ nhớ: {rememberedCount}/{practiceIndex}</span>
+                  <span className="text-amber-400 font-semibold">
+                    {practiceQueue[practiceIndex]?.status === 'mastered' ? '🟢 Từ đã thuộc' : '🟡 Từ đang học'}
+                  </span>
                 </div>
                 <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
                   <div
@@ -650,7 +674,7 @@ export default function Home() {
                   ></div>
                 </div>
 
-                {/* Thẻ 3D Luyện Tập */}
+                {/* THẺ 3D */}
                 <div className="[perspective:1000px] h-[320px]">
                   <div
                     onClick={() => setIsPracticeFlipped(!isPracticeFlipped)}
@@ -712,14 +736,14 @@ export default function Home() {
                     disabled={!isPracticeFlipped}
                     className="bg-slate-800 hover:bg-red-950/60 border border-red-500/40 text-red-400 font-bold py-3.5 rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    ❌ Quên Rồi (Chưa Thuộc)
+                    ❌ Quên Rồi (Học lại)
                   </button>
                   <button
                     onClick={() => handleAnswer(true)}
                     disabled={!isPracticeFlipped}
                     className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3.5 rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-40 shadow-lg disabled:cursor-not-allowed"
                   >
-                    ✅ Đã Nhớ Rất Tốt
+                    ✅ Đã Nhớ (Đã thuộc)
                   </button>
                 </div>
               </div>

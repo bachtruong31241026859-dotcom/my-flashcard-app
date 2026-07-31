@@ -48,7 +48,7 @@ export async function POST(req: Request) {
       Yêu cầu ngữ cảnh:
       ${modeInstruction}
 
-      TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ (Không kèm lời dẫn, không bọc markdown ```json):
+      TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ (Không kèm lời dẫn, không bọc markdown \`\`\`json):
       {
         "word": "${word}",
         "ipa": "/phiên_âm/",

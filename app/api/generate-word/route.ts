@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      return NextResponse.json({ error: 'Thiếu GEMINI_API_KEY trong cấu hình Vercel' }, { status: 500 });
+      return NextResponse.json({ error: 'Chưa cấu hình GEMINI_API_KEY trên Vercel!' }, { status: 500 });
     }
 
     const prompt = `Bạn là một chuyên gia IELTS. Hãy phân tích từ tiếng Anh "${cleanWord}" và trả về duy nhất một chuỗi JSON hợp lệ theo đúng cấu trúc sau (không kèm markdown codeblock \`\`\`json):
@@ -30,13 +30,20 @@ export async function POST(req: Request) {
   }
 }`;
 
-    // Danh sách model REST API chính thức của Google Gemini
-    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+    // Thử lần lượt các phiên bản API và Model của Google
+    const targets = [
+      { version: 'v1beta', model: 'gemini-2.5-flash' },
+      { version: 'v1beta', model: 'gemini-2.0-flash' },
+      { version: 'v1beta', model: 'gemini-1.5-flash' },
+      { version: 'v1', model: 'gemini-1.5-flash' },
+      { version: 'v1beta', model: 'gemini-1.5-pro' }
+    ];
+
     let responseData = null;
     let lastErrorMsg = '';
 
-    for (const model of models) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    for (const target of targets) {
+      const url = `https://generativelanguage.googleapis.com/${target.version}/models/${target.model}:generateContent?key=${apiKey}`;
       
       try {
         const res = await fetch(url, {
@@ -53,9 +60,9 @@ export async function POST(req: Request) {
           const text = data.candidates[0].content.parts[0].text;
           const cleanedJsonText = text.replace(/```json/g, '').replace(/```/g, '').trim();
           responseData = JSON.parse(cleanedJsonText);
-          break; // Tìm thấy model chạy thành công, thoát vòng lặp
+          break;
         } else {
-          lastErrorMsg = data.error?.message || `Model ${model} trả về lỗi`;
+          lastErrorMsg = data.error?.message || `Lỗi ${res.status}: ${JSON.stringify(data)}`;
         }
       } catch (e: any) {
         lastErrorMsg = e.message;
@@ -63,7 +70,7 @@ export async function POST(req: Request) {
     }
 
     if (!responseData) {
-      throw new Error(lastErrorMsg || 'Không thể kết nối tới Google AI Gemini');
+      throw new Error(lastErrorMsg || 'Google AI từ chối kết nối. Hãy kiểm tra lại API Key trên Vercel.');
     }
 
     return NextResponse.json({

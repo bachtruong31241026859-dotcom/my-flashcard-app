@@ -9,9 +9,12 @@ export async function POST(req: Request) {
     }
 
     const cleanWord = word.trim().toLowerCase();
-    const apiKey = process.env.GEMINI_API_KEY;
+    let apiKey = process.env.GEMINI_API_KEY || '';
 
-    if (!apiKey || apiKey.trim() === '') {
+    // Tự động làm sạch Key (xóa khoảng trắng hoặc dấu ngoặc kép nếu lỡ dán thừa)
+    apiKey = apiKey.trim().replace(/^["']|["']$/g, '');
+
+    if (!apiKey) {
       return NextResponse.json(
         { error: 'Chưa tìm thấy GEMINI_API_KEY trên Vercel. Hãy kiểm tra Environment Variables!' },
         { status: 500 }
@@ -33,18 +36,19 @@ export async function POST(req: Request) {
   }
 }`;
 
-    // Chỉ dùng 2 model mới nhất
     const models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
-    let responseData = null;
-    let lastError = '';
+    let lastErrorDetails = '';
 
     for (const model of models) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey.trim()}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
       
       try {
         const res = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey // Gửi Key qua Header an toàn
+          },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }]
           })
@@ -55,28 +59,25 @@ export async function POST(req: Request) {
         if (res.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
           const text = data.candidates[0].content.parts[0].text;
           const cleanedJsonText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-          responseData = JSON.parse(cleanedJsonText);
-          break;
+          const responseData = JSON.parse(cleanedJsonText);
+          
+          return NextResponse.json({
+            success: true,
+            source: 'ai_generated',
+            data: responseData
+          });
         } else {
-          lastError = data.error?.message || `Lỗi HTTP ${res.status}`;
+          lastErrorDetails = `[${model} - Code ${res.status}]: ${data.error?.message || JSON.stringify(data)}`;
         }
       } catch (e: any) {
-        lastError = e.message;
+        lastErrorDetails = `[${model} Exception]: ${e.message}`;
       }
     }
 
-    if (!responseData) {
-      return NextResponse.json(
-        { error: `Google AI từ chối: ${lastError}` },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      source: 'ai_generated',
-      data: responseData
-    });
+    return NextResponse.json(
+      { error: `Google AI từ chối: ${lastErrorDetails}` },
+      { status: 500 }
+    );
 
   } catch (error: any) {
     return NextResponse.json(

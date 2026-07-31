@@ -66,7 +66,7 @@ export default function Home() {
     }
   };
 
-  // Tra từ AI
+  // Tra từ AI (Đã nâng cấp bắt lỗi chi tiết 404 / 500)
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!word.trim()) return;
@@ -81,14 +81,24 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ word }),
       });
+
+      // Nếu Server trả về lỗi (như 404 hoặc 500)
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error('Lỗi Server:', errText);
+        alert(`Lỗi Server (${res.status}): Vui lòng kiểm tra lại file API hoặc GROQ_API_KEY!`);
+        return;
+      }
+
       const data = await res.json();
       if (data.data) {
         setResult(data.data);
       } else {
         alert(data.error || 'Có lỗi xảy ra khi tra từ!');
       }
-    } catch (err) {
-      alert('Không thể kết nối tới server AI');
+    } catch (err: any) {
+      console.error('Fetch error:', err);
+      alert(`Lỗi kết nối: ${err.message || 'Không thể kết nối tới server AI'}`);
     } finally {
       setLoading(false);
     }

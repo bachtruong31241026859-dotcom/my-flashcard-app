@@ -1,372 +1,493 @@
 'use client';
-import React, { useState } from 'react';
-import { Volume2, RotateCw, TreePine, Droplets, Shield, Sparkles, Edit3, Save, Search, Loader2 } from 'lucide-react';
+
+import { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'flashcard' | 'tree' | 'admin'>('flashcard');
-  const [role, setRole] = useState<'free' | 'vip'>('free');
-  const [freeWordCount, setFreeWordCount] = useState(1);
-  const [inputWord, setInputWord] = useState('');
+  const [activeTab, setActiveTab] = useState<'search' | 'saved'>('search');
+  const [word, setWord] = useState('');
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [isFlipped, setIsFlipped] = useState(false);
-  const [selectedBand, setSelectedBand] = useState<'4.0' | '6.0' | '8.0'>('6.0');
-  const [waterDrops, setWaterDrops] = useState(145);
-  const [isEditing, setIsEditing] = useState(false);
-
-  // State hỗ trợ lưu từ vựng vào Supabase
+  const [result, setResult] = useState<any>(null);
   const [saving, setSaving] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
+  const [savedSuccess, setSavedSuccess] = useState(false);
 
-  // Dữ liệu từ vựng hiện tại
-  const [currentWord, setCurrentWord] = useState<any>({
-    word: 'mitigate',
-    ipa: '/ˈmɪt.ɪ.ɡeɪt/',
-    part_of_speech: 'verb',
-    vietnamese_meaning: 'Giảm nhẹ, làm bớt gay gắt (nguy cơ, thiệt hại)',
-    examples_json: {
-      examples: [
-        { band: '4.0', sentence: 'We need to mitigate the damage after the storm.', translation: 'Chúng ta cần giảm nhẹ thiệt hại sau cơn bão.' },
-        { band: '6.0', sentence: 'The government implemented strict policies to mitigate environmental pollution.', translation: 'Chính phủ đã thực thi các chính sách nghiêm ngặt để giảm thiểu ô nhiễm môi trường.' },
-        { band: '8.0', sentence: 'Effective risk management strategies are imperative to mitigate adverse global economic volatility.', translation: 'Các chiến lược quản lý rủi ro hiệu quả là bắt buộc để giảm thiểu tác động bất lợi từ sự biến động kinh tế toàn cầu.' }
-      ]
+  // Auth States
+  const [user, setUser] = useState<any>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+
+  // Saved Flashcards States
+  const [savedCards, setSavedCards] = useState<any[]>([]);
+  const [loadingCards, setLoadingCards] = useState(false);
+  const [flippedCardId, setFlippedCardId] = useState<string | null>(null);
+
+  // Kiểm tra trạng thái đăng nhập khi load trang
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setUser(data.user);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  // Tải danh sách từ vựng đã lưu khi chuyển sang Tab "Bộ Thẻ"
+  useEffect(() => {
+    if (activeTab === 'saved') {
+      fetchSavedCards();
     }
-  });
+  }, [activeTab, user]);
 
-  const [customMeaning, setCustomMeaning] = useState(currentWord.vietnamese_meaning);
-  const [cacheSource, setCacheSource] = useState<string | null>(null);
+  const fetchSavedCards = async () => {
+    setLoadingCards(true);
+    try {
+      const url = user ? `/api/flashcards?user_id=${user.id}` : '/api/flashcards';
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.data) {
+        setSavedCards(data.data);
+      }
+    } catch (err) {
+      console.error('Lỗi khi tải từ vựng:', err);
+    } finally {
+      setLoadingCards(false);
+    }
+  };
 
-  // 1. HÀM GỌI GROQ AI TRA TỪ
-  const handleSearch = async () => {
-    if (!inputWord.trim()) return;
+  // Tra từ AI
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!word.trim()) return;
+
     setLoading(true);
-    setErrorMessage('');
-    setIsFlipped(false);
-    setIsSaved(false); // Reset trạng thái đã lưu khi tra từ mới
+    setResult(null);
+    setSavedSuccess(false);
 
     try {
-      const response = await fetch('/api/generate-word', {
+      const res = await fetch('/api/groq', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          word: inputWord.trim(),
-        }),
+        body: JSON.stringify({ word }),
       });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Có lỗi xảy ra khi tra từ');
+      const data = await res.json();
+      if (data.data) {
+        setResult(data.data);
+      } else {
+        alert(data.error || 'Có lỗi xảy ra khi tra từ!');
       }
-
-      setCurrentWord(result.data);
-      setCustomMeaning(result.data.vietnamese_meaning);
-      setCacheSource(result.source === 'cache_hit' ? 'Global Cache Hit (Miễn phí API)' : 'Groq AI vừa phân tích!');
-      
-      if (role === 'free' && result.source !== 'cache_hit') {
-        setFreeWordCount((prev) => Math.min(prev + 1, 3));
-      }
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Không thể kết nối đến máy chủ AI');
+    } catch (err) {
+      alert('Không thể kết nối tới server AI');
     } finally {
       setLoading(false);
     }
   };
 
-  // 2. HÀM LƯU TỪ VỰNG VÀO SUPABASE
-  const handleSaveCard = async () => {
-    if (!currentWord || isSaved) return;
-
+  // Lưu từ vào Supabase
+  const handleSave = async () => {
+    if (!result) return;
     setSaving(true);
     try {
-      // Đính kèm nghĩa tiếng Việt nếu người dùng có chỉnh sửa tay
-      const dataToSave = {
-        ...currentWord,
-        vietnamese_meaning: customMeaning || currentWord.vietnamese_meaning
-      };
-
-      const response = await fetch('/api/flashcards', {
+      const res = await fetch('/api/flashcards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(dataToSave),
+        body: JSON.stringify({
+          word: result.word,
+          ipa: result.ipa,
+          part_of_speech: result.partOfSpeech || result.part_of_speech,
+          vietnamese_meaning: result.vietnamese_meaning,
+          examples_json: result.examples,
+          user_id: user ? user.id : null,
+        }),
       });
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          alert('⚠️ Bạn cần đăng nhập tài khoản Supabase để lưu từ vựng này!');
-        } else {
-          alert('⚠️ ' + (result.error || 'Không thể lưu từ vựng vào DB'));
-        }
-        return;
+      const data = await res.json();
+      if (data.success) {
+        setSavedSuccess(true);
+      } else {
+        alert('Lỗi khi lưu: ' + data.error);
       }
-
-      setIsSaved(true);
-    } catch (err: any) {
-      alert('⚠️ Đã xảy ra lỗi kết nối khi lưu từ.');
+    } catch (err) {
+      alert('Không thể kết nối đến máy chủ lưu trữ');
     } finally {
       setSaving(false);
     }
   };
 
-  const speakWord = () => {
+  // Xóa từ vựng khỏi Supabase
+  const handleDeleteCard = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Bạn có chắc muốn xóa từ vựng này khỏi bộ thẻ?')) return;
+
+    try {
+      const res = await fetch(`/api/flashcards?id=${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        setSavedCards(savedCards.filter((card) => card.id !== id));
+      } else {
+        alert('Lỗi khi xóa: ' + data.error);
+      }
+    } catch (err) {
+      alert('Lỗi hệ thống khi xóa!');
+    }
+  };
+
+  // Phát âm từ vựng
+  const speakWord = (text: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(currentWord.word);
+      const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'en-US';
       window.speechSynthesis.speak(utterance);
     }
   };
 
-  const getExampleByBand = (band: string) => {
-    const list = currentWord.examples_json?.examples || [];
-    return list.find((ex: any) => ex.band === band) || list[0] || { sentence: 'Chưa có ví dụ', translation: '' };
+  // Xử lý Auth (Đăng nhập / Đăng ký)
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthLoading(true);
+
+    try {
+      if (authMode === 'login') {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        alert('Đăng ký thành công! Hãy kiểm tra Email của bạn để xác nhận tài khoản.');
+      }
+      setShowAuthModal(false);
+      setEmail('');
+      setPassword('');
+    } catch (err: any) {
+      alert(err.message || 'Thao tác thất bại!');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
   };
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans">
-      {/* HEADER NAVBAR */}
-      <header className="bg-slate-800 border-b border-slate-700 px-6 py-4 flex flex-wrap justify-between items-center gap-4">
-        <div className="flex items-center gap-2">
-          <TreePine className="w-8 h-8 text-emerald-400" />
-          <h1 className="text-xl font-bold bg-gradient-to-r from-emerald-400 to-teal-200 bg-clip-text text-transparent">
-            IELTS Flashcard & Tree Growth
+      {/* Header / Navbar */}
+      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-40 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <div className="text-2xl">🌲</div>
+          <h1 className="text-lg font-bold bg-gradient-to-r from-emerald-400 to-teal-200 bg-clip-text text-transparent">
+            IELTS Flashcard AI
           </h1>
         </div>
 
-        <div className="flex items-center gap-2 bg-slate-900/80 p-1.5 rounded-xl border border-slate-700">
-          <button onClick={() => setActiveTab('flashcard')} className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'flashcard' ? 'bg-emerald-500 text-slate-950 font-semibold shadow-lg' : 'text-slate-400 hover:text-white'}`}>
-            📚 Học Flashcard
+        {/* Tab Selector */}
+        <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700">
+          <button
+            onClick={() => setActiveTab('search')}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${
+              activeTab === 'search'
+                ? 'bg-emerald-500 text-slate-950 font-semibold shadow'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            🔍 Tra Từ AI
           </button>
-          <button onClick={() => setActiveTab('tree')} className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'tree' ? 'bg-emerald-500 text-slate-950 font-semibold shadow-lg' : 'text-slate-400 hover:text-white'}`}>
-            🌳 Trồng Cây Tri Thức
-          </button>
-          <button onClick={() => setActiveTab('admin')} className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${activeTab === 'admin' ? 'bg-emerald-500 text-slate-950 font-semibold shadow-lg' : 'text-slate-400 hover:text-white'}`}>
-            ⚙️ Admin Panel
+          <button
+            onClick={() => setActiveTab('saved')}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${
+              activeTab === 'saved'
+                ? 'bg-emerald-500 text-slate-950 font-semibold shadow'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            🎴 Bộ Thẻ Đã Lưu ({savedCards.length})
           </button>
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className={`px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider ${role === 'vip' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50' : 'bg-slate-700 text-slate-300'}`}>
-            {role === 'vip' ? '👑 VIP Member' : '🌱 Free Plan'}
-          </span>
-          <button onClick={() => setRole(role === 'free' ? 'vip' : 'free')} className="text-xs text-slate-400 underline hover:text-slate-200">
-            (Đổi quyền thử)
-          </button>
+        {/* User Auth Section */}
+        <div>
+          {user ? (
+            <div className="flex items-center space-x-3">
+              <span className="text-xs bg-slate-800 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-full">
+                👤 {user.email?.split('@')[0]}
+              </span>
+              <button
+                onClick={handleLogout}
+                className="text-xs text-slate-400 hover:text-red-400 transition"
+              >
+                Đăng xuất
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAuthModal(true)}
+              className="px-3.5 py-1.5 text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-lg hover:bg-emerald-500 hover:text-slate-950 transition"
+            >
+              🔑 Đăng nhập / Đăng ký
+            </button>
+          )}
         </div>
       </header>
 
-      {/* BODY CONTENT */}
-      <main className="flex-1 max-w-5xl w-full mx-auto p-6">
-        {activeTab === 'flashcard' && (
+      {/* Main Content Area */}
+      <main className="flex-1 max-w-4xl w-full mx-auto p-4 md:p-6">
+        {/* TAB 1: TRA TỪ AI */}
+        {activeTab === 'search' && (
           <div className="space-y-6">
-            {/* Banner Thông báo Hạn Mức */}
-            <div className="bg-slate-800 border border-slate-700 p-4 rounded-xl flex items-center justify-between">
-              <div>
-                <span className="text-sm text-slate-300">
-                  {role === 'free' ? (
-                    <>Hôm nay bạn đã tạo: <strong className="text-emerald-400">{freeWordCount}/3 từ</strong> miễn phí</>
-                  ) : (
-                    <span className="text-amber-400 font-medium">✨ Tài khoản VIP - Tạo từ không giới hạn</span>
-                  )}
-                </span>
-              </div>
-              {cacheSource && (
-                <span className="text-xs bg-emerald-950 text-emerald-300 border border-emerald-800 px-3 py-1 rounded-full flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5" /> {cacheSource}
-                </span>
-              )}
-            </div>
-
-            {/* Ô nhập từ vựng */}
-            <div className="flex gap-2">
+            <form onSubmit={handleSearch} className="flex gap-2">
               <input
                 type="text"
-                placeholder="Nhập từ tiếng Anh (VD: accountant, meticulous)..."
-                value={inputWord}
-                onChange={(e) => setInputWord(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500"
+                value={word}
+                onChange={(e) => setWord(e.target.value)}
+                placeholder="Nhập từ vựng tiếng Anh (Ví dụ: Mitigate, Resilience...)"
+                className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
               />
               <button
-                onClick={handleSearch}
+                type="submit"
                 disabled={loading}
-                className="bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-700 text-slate-950 font-bold px-6 py-3 rounded-xl transition-all flex items-center gap-2"
+                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-6 py-3 rounded-xl transition disabled:opacity-50"
               >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Tra Từ AI'}
+                {loading ? 'Đang phân tích...' : 'Tra Từ AI'}
               </button>
-            </div>
+            </form>
 
-            {errorMessage && (
-              <div className="bg-rose-950/80 border border-rose-800 text-rose-300 p-3 rounded-xl text-sm">
-                ⚠️ {errorMessage}
-              </div>
-            )}
-
-            {/* Thẻ Flashcard Lật Mặt */}
-            <div className="perspective-1000 min-h-[360px] relative">
-              <div className={`w-full min-h-[360px] bg-slate-800 border border-slate-700 rounded-2xl p-8 flex flex-col justify-between shadow-2xl transition-all duration-500`}>
-                {!isFlipped ? (
-                  // Mặt trước thẻ
-                  <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4">
-                    <span className="text-xs bg-slate-700 text-slate-300 px-3 py-1 rounded-full uppercase tracking-widest">
-                      {currentWord.part_of_speech || currentWord.partOfSpeech}
+            {result && (
+              <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-6 shadow-xl space-y-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-xs uppercase tracking-wider font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2.5 py-1 rounded-md">
+                      {result.partOfSpeech || result.part_of_speech}
                     </span>
-                    <h2 className="text-5xl font-extrabold text-white tracking-wide capitalize">{currentWord.word}</h2>
-                    <p className="text-slate-400 text-lg">{currentWord.ipa}</p>
-                    <button onClick={speakWord} className="p-3 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 rounded-full transition-all">
-                      <Volume2 className="w-6 h-6" />
-                    </button>
+                    <h2 className="text-4xl font-extrabold text-white mt-2 flex items-center gap-3">
+                      {result.word}
+                      <button
+                        onClick={() => speakWord(result.word)}
+                        className="text-lg bg-slate-700/60 hover:bg-slate-600 p-2 rounded-full text-emerald-400 transition"
+                        title="Phát âm"
+                      >
+                        🔊
+                      </button>
+                    </h2>
+                    <p className="text-slate-400 font-mono mt-1">{result.ipa}</p>
                   </div>
-                ) : (
-                  // Mặt sau thẻ
-                  <div className="space-y-6">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="text-xs text-slate-400 mb-1">Nghĩa Tiếng Việt:</div>
-                        {isEditing ? (
-                          <div className="flex gap-2">
-                            <input type="text" value={customMeaning} onChange={(e) => setCustomMeaning(e.target.value)} className="bg-slate-900 border border-emerald-500 rounded px-3 py-1 text-emerald-300 w-full" />
-                            <button onClick={() => setIsEditing(false)} className="bg-emerald-500 text-slate-950 p-2 rounded">
-                              <Save className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-2xl font-bold text-emerald-400">{customMeaning}</h3>
-                            <button onClick={() => setIsEditing(true)} className="text-slate-500 hover:text-slate-300">
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Chọn Band Ví dụ */}
-                    <div className="space-y-2">
-                      <div className="flex gap-2 border-b border-slate-700 pb-2">
-                        {(['4.0', '6.0', '8.0'] as const).map((band) => (
-                          <button key={band} onClick={() => setSelectedBand(band)} className={`px-3 py-1 rounded-lg text-xs font-semibold ${selectedBand === band ? 'bg-emerald-500 text-slate-950' : 'bg-slate-700 text-slate-300'}`}>
-                            IELTS Band {band}
-                          </button>
-                        ))}
-                      </div>
-                      <p className="text-lg text-slate-200 italic">"{getExampleByBand(selectedBand).sentence}"</p>
-                      <p className="text-sm text-slate-400">👉 {getExampleByBand(selectedBand).translation}</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Chân thẻ: Nút lật thẻ & Nút Lưu vào Supabase */}
-                <div className="pt-4 border-t border-slate-700/50 flex justify-between items-center">
-                  <button onClick={() => setIsFlipped(!isFlipped)} className="flex items-center gap-2 text-slate-400 hover:text-emerald-400 text-sm transition-all">
-                    <RotateCw className="w-4 h-4" /> Lật mặt thẻ
-                  </button>
 
                   <button
-                    onClick={handleSaveCard}
-                    disabled={saving || isSaved}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-                      isSaved
-                        ? 'bg-emerald-950 text-emerald-400 border border-emerald-700/60 cursor-default'
-                        : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md hover:shadow-emerald-500/20'
+                    onClick={handleSave}
+                    disabled={saving || savedSuccess}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-2 ${
+                      savedSuccess
+                        ? 'bg-slate-700 text-emerald-400 border border-emerald-500/30'
+                        : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
                     }`}
                   >
-                    {saving ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Đang lưu...
-                      </>
-                    ) : isSaved ? (
-                      '✓ Đã lưu vào Bộ thẻ'
-                    ) : (
-                      '+ Lưu vào Bộ thẻ'
-                    )}
+                    {savedSuccess ? '✓ Đã Lưu Vô Bộ Thẻ' : saving ? 'Đang lưu...' : '+ Lưu vào Bộ Thẻ'}
                   </button>
                 </div>
-              </div>
-            </div>
 
-            {/* Nút Đánh Giá Spaced Repetition (Anki) */}
-            <div className="grid grid-cols-3 gap-4 pt-2">
-              <button className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-semibold py-3 rounded-xl">
-                🔴 Khó (Ôn lại sau 1 ngày)
-              </button>
-              <button className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 font-semibold py-3 rounded-xl">
-                🟡 Vừa (Ôn lại sau 3 ngày)
-              </button>
-              <button className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold py-3 rounded-xl">
-                🟢 Dễ (Ôn lại sau 7 ngày)
-              </button>
-            </div>
+                <div className="border-t border-slate-700/60 pt-4">
+                  <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Nghĩa tiếng Việt</h3>
+                  <p className="text-xl font-medium text-emerald-300 mt-1">{result.vietnamese_meaning}</p>
+                </div>
+
+                {result.examples && result.examples.length > 0 && (
+                  <div className="border-t border-slate-700/60 pt-4 space-y-3">
+                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Ví dụ ngữ cảnh IELTS</h3>
+                    {result.examples.map((ex: any, idx: number) => (
+                      <div key={idx} className="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800">
+                        <p className="text-slate-200 italic font-serif">"{ex.en}"</p>
+                        <p className="text-slate-400 text-sm mt-1">👉 {ex.vi}</p>
+                        {ex.band && (
+                          <span className="inline-block text-[10px] bg-slate-800 text-emerald-400 border border-slate-700 px-2 py-0.5 rounded mt-2">
+                            IELTS Band {ex.band}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
-        {activeTab === 'tree' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 space-y-6">
-                <div className="flex justify-between items-center">
-                  <h3 className="font-bold text-lg text-emerald-400">Đồng Hồ Tích Giọt Nước</h3>
-                  <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 flex items-center gap-1">
-                    <Shield className="w-3.5 h-3.5" /> Anti-cheat: Đang tính giờ
-                  </span>
-                </div>
-
-                <div className="text-center py-6 bg-slate-900 rounded-xl border border-slate-700">
-                  <div className="text-5xl font-black text-white mb-2">25:00</div>
-                  <p className="text-slate-400 text-sm">1 phút active = 1 giọt nước</p>
-                </div>
-
-                <div className="flex items-center justify-between bg-slate-900/50 p-4 rounded-xl">
-                  <div className="flex items-center gap-3">
-                    <Droplets className="w-8 h-8 text-cyan-400" />
-                    <div>
-                      <div className="text-sm text-slate-400">Kho nước tích lũy</div>
-                      <div className="text-2xl font-bold text-white">{waterDrops} giọt</div>
-                    </div>
-                  </div>
-                  <button onClick={() => setWaterDrops(waterDrops + 10)} className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-4 py-2 rounded-lg text-sm">
-                    Tưới cây
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 space-y-6 flex flex-col justify-between">
-                <div>
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-lg text-emerald-400">Trạng Thái Cây Tri Thức</h3>
-                    <span className="text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-3 py-1 rounded-full">
-                      🌱 Cấp 3: Cây con (Sapling)
-                    </span>
-                  </div>
-
-                  <div className="space-y-2 mb-6">
-                    <div className="flex justify-between text-xs text-slate-400">
-                      <span>Mầm non (30 giọt)</span>
-                      <span>Cây con (180 giọt)</span>
-                    </div>
-                    <div className="w-full bg-slate-900 h-3 rounded-full overflow-hidden border border-slate-700">
-                      <div className="bg-gradient-to-r from-emerald-500 to-teal-300 h-full w-[80%]" />
-                    </div>
-                  </div>
-
-                  <div className="text-center py-8">
-                    <TreePine className="w-32 h-32 text-emerald-400 mx-auto animate-bounce" />
-                    <p className="mt-4 text-slate-300 font-medium">Cây của bạn đang phát triển rất khỏe mạnh!</p>
-                  </div>
-                </div>
-              </div>
+        {/* TAB 2: BỘ THẺ ĐÃ LƯU */}
+        {activeTab === 'saved' && (
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-bold text-white">🎴 Thẻ từ vựng của bạn</h2>
+              <button
+                onClick={fetchSavedCards}
+                className="text-xs text-slate-400 hover:text-emerald-400 transition"
+              >
+                🔄 Làm mới
+              </button>
             </div>
-          </div>
-        )}
 
-        {activeTab === 'admin' && (
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 space-y-6">
-            <h3 className="font-bold text-lg text-emerald-400">⚙️ Admin Panel - Quản Lý Membership Học Viên</h3>
-            <p className="text-slate-400 text-sm">Giao diện quản lý kích hoạt VIP cho học viên qua chuyển khoản VietQR.</p>
+            {loadingCards ? (
+              <div className="text-center py-12 text-slate-500">Đang tải bộ thẻ từ vựng...</div>
+            ) : savedCards.length === 0 ? (
+              <div className="text-center py-16 bg-slate-800/40 rounded-2xl border border-slate-800">
+                <p className="text-slate-400 text-base">Bạn chưa lưu từ vựng nào.</p>
+                <button
+                  onClick={() => setActiveTab('search')}
+                  className="mt-3 text-sm text-emerald-400 hover:underline"
+                >
+                  Tra từ ngay để lưu bộ thẻ đầu tiên!
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {savedCards.map((card) => {
+                  const isFlipped = flippedCardId === card.id;
+                  return (
+                    <div
+                      key={card.id}
+                      onClick={() => setFlippedCardId(isFlipped ? null : card.id)}
+                      className={`cursor-pointer bg-slate-800 border rounded-2xl p-5 transition-all duration-300 relative flex flex-col justify-between min-h-[200px] ${
+                        isFlipped
+                          ? 'border-emerald-500/50 bg-slate-800/90 shadow-lg'
+                          : 'border-slate-700 hover:border-slate-600'
+                      }`}
+                    >
+                      {/* Top Action Buttons */}
+                      <div className="flex justify-between items-center w-full z-10">
+                        <span className="text-[11px] uppercase font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-2 py-0.5 rounded">
+                          {card.part_of_speech || 'Vocabulary'}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={(e) => speakWord(card.word, e)}
+                            className="text-xs bg-slate-700/60 hover:bg-slate-600 p-1.5 rounded-full text-emerald-400"
+                            title="Phát âm"
+                          >
+                            🔊
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteCard(card.id, e)}
+                            className="text-xs text-slate-500 hover:text-red-400 p-1.5"
+                            title="Xóa thẻ"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Card Body (Mặt trước vs Mặt sau) */}
+                      {!isFlipped ? (
+                        <div className="my-auto text-center py-4">
+                          <h3 className="text-3xl font-extrabold text-white tracking-wide">{card.word}</h3>
+                          {card.ipa && <p className="text-slate-400 font-mono text-sm mt-1">{card.ipa}</p>}
+                          <p className="text-xs text-slate-500 mt-3 font-medium">👆 Chạm để lật xem nghĩa</p>
+                        </div>
+                      ) : (
+                        <div className="my-auto py-2 space-y-2">
+                          <div>
+                            <span className="text-[10px] text-slate-400 uppercase font-semibold">Nghĩa tiếng Việt</span>
+                            <p className="text-lg font-bold text-emerald-300">{card.vietnamese_meaning}</p>
+                          </div>
+                          {card.examples_json && card.examples_json.length > 0 && (
+                            <div className="pt-2 border-t border-slate-700/50">
+                              <p className="text-xs italic text-slate-300">"{card.examples_json[0].en}"</p>
+                              <p className="text-xs text-slate-400 mt-0.5">👉 {card.examples_json[0].vi}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="text-[10px] text-right text-slate-500">
+                        {isFlipped ? 'Lật lại' : 'Mặt trước'}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </main>
+
+      {/* AUTH MODAL (Đăng nhập / Đăng ký) */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl max-w-sm w-full p-6 shadow-2xl relative">
+            <button
+              onClick={() => setShowAuthModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            >
+              ✕
+            </button>
+
+            <h2 className="text-xl font-bold text-white text-center mb-4">
+              {authMode === 'login' ? 'Đăng Nhập' : 'Đăng ký tài khoản'}
+            </h2>
+
+            <form onSubmit={handleAuthSubmit} className="space-y-4">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Email</label>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Mật khẩu</label>
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-2.5 rounded-xl transition text-sm disabled:opacity-50"
+              >
+                {authLoading ? 'Đang xử lý...' : authMode === 'login' ? 'Đăng Nhập' : 'Đăng Ký'}
+              </button>
+            </form>
+
+            <div className="mt-4 text-center">
+              {authMode === 'login' ? (
+                <p className="text-xs text-slate-400">
+                  Chưa có tài khoản?{' '}
+                  <button onClick={() => setAuthMode('signup')} className="text-emerald-400 hover:underline">
+                    Đăng ký ngay
+                  </button>
+                </p>
+              ) : (
+                <p className="text-xs text-slate-400">
+                  Đã có tài khoản?{' '}
+                  <button onClick={() => setAuthMode('login')} className="text-emerald-400 hover:underline">
+                    Đăng nhập
+                  </button>
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

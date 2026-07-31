@@ -1,7 +1,4 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export async function POST(req: Request) {
   try {
@@ -12,11 +9,11 @@ export async function POST(req: Request) {
     }
 
     const cleanWord = word.trim().toLowerCase();
+    const apiKey = process.env.GEMINI_API_KEY;
 
-    // Danh sách các model Gemini hỗ trợ (tự động chuyển nếu model đầu bị lỗi)
-    const modelNames = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest'];
-    let responseText = '';
-    let lastError: any = null;
+    if (!apiKey) {
+      return NextResponse.json({ error: 'Thiếu GEMINI_API_KEY trong cấu hình Vercel' }, { status: 500 });
+    }
 
     const prompt = `Bạn là một chuyên gia IELTS. Hãy phân tích từ tiếng Anh "${cleanWord}" và trả về duy nhất một chuỗi JSON hợp lệ theo đúng cấu trúc sau (không kèm markdown codeblock \`\`\`json):
 {
@@ -33,30 +30,46 @@ export async function POST(req: Request) {
   }
 }`;
 
-    // Thử lần lượt các model cho đến khi thành công
-    for (const modelName of modelNames) {
+    // Danh sách model REST API chính thức của Google Gemini
+    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+    let responseData = null;
+    let lastErrorMsg = '';
+
+    for (const model of models) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      
       try {
-        const model = genAI.getGenerativeModel({ model: modelName });
-        const result = await model.generateContent(prompt);
-        responseText = await result.response.text();
-        if (responseText) break;
-      } catch (err) {
-        lastError = err;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }]
+          })
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
+          const text = data.candidates[0].content.parts[0].text;
+          const cleanedJsonText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+          responseData = JSON.parse(cleanedJsonText);
+          break; // Tìm thấy model chạy thành công, thoát vòng lặp
+        } else {
+          lastErrorMsg = data.error?.message || `Model ${model} trả về lỗi`;
+        }
+      } catch (e: any) {
+        lastErrorMsg = e.message;
       }
     }
 
-    if (!responseText) {
-      throw lastError || new Error('Không thể kết nối đến máy chủ AI Gemini');
+    if (!responseData) {
+      throw new Error(lastErrorMsg || 'Không thể kết nối tới Google AI Gemini');
     }
-
-    // Làm sạch chuỗi JSON nếu AI vô tình trả về thêm ngoặc markdown
-    const cleanedJsonText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-    const parsedData = JSON.parse(cleanedJsonText);
 
     return NextResponse.json({
       success: true,
       source: 'ai_generated',
-      data: parsedData
+      data: responseData
     });
 
   } catch (error: any) {

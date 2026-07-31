@@ -66,7 +66,7 @@ export default function Home() {
     }
   };
 
-  // Tra từ AI (Đã nâng cấp bắt lỗi chi tiết 404 / 500)
+  // Tra từ AI (Đã cập nhật đúng endpoint /api/groq)
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!word.trim()) return;
@@ -76,13 +76,12 @@ export default function Home() {
     setSavedSuccess(false);
 
     try {
-      const res = await fetch('/api', {
+      const res = await fetch('/api/groq', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ word }),
       });
 
-      // Nếu Server trả về lỗi (như 404 hoặc 500)
       if (!res.ok) {
         const errText = await res.text();
         console.error('Lỗi Server:', errText);

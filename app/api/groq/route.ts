@@ -13,23 +13,31 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Chưa nhập từ vựng!' }, { status: 400 });
     }
 
-    // Tùy chỉnh Prompt theo từng Chế độ
+    // Tùy chỉnh Phân cấp độ theo từng Chế độ
     let modeInstruction = '';
     if (mode === 'ielts') {
       modeInstruction = `
         - Ngữ cảnh: Phục vụ ôn thi IELTS Academic/General.
-        - Câu ví dụ phải mang tính học thuật, từ vựng nâng cao (Band 7.0 - 8.5).
-        - Thêm thuộc tính "band" vào từng ví dụ (Ví dụ: "IELTS 7.5+").
+        - Tạo đúng 3 câu ví dụ phân theo 3 cấp độ IELTS tăng dần:
+          1. level: "Band 6.0 - 6.5"
+          2. level: "Band 7.0 - 7.5"
+          3. level: "Band 8.0 - 9.0"
       `;
     } else if (mode === 'business') {
       modeInstruction = `
-        - Ngữ cảnh: Tiếng Anh Công sở, môi trường làm việc doanh nghiệp, đàm phán, email chuyên nghiệp.
-        - Câu ví dụ thể hiện các tình huống giao tiếp văn phòng, báo cáo, họp hành.
+        - Ngữ cảnh: Tiếng Anh Công sở, môi trường doanh nghiệp.
+        - Tạo đúng 3 câu ví dụ phân theo 3 cấp độ công việc:
+          1. level: "Sơ cấp Công sở"
+          2. level: "Chuyên nghiệp"
+          3. level: "Quản lý / Đàm phán"
       `;
     } else {
       modeInstruction = `
-        - Ngữ cảnh: Tiếng Anh Giao tiếp đời thường (Daily conversation).
-        - Câu ví dụ tự nhiên, gần gũi, hay dùng trong cuộc sống hàng ngày.
+        - Ngữ cảnh: Tiếng Anh Giao tiếp đời thường (Daily Conversation).
+        - Tạo đúng 3 câu ví dụ phân theo 3 mức độ giao tiếp:
+          1. level: "Giao tiếp cơ bản"
+          2. level: "Tự nhiên / Đời sống"
+          3. level: "Thành ngữ / Slang"
       `;
     }
 
@@ -40,7 +48,7 @@ export async function POST(req: Request) {
       Yêu cầu ngữ cảnh:
       ${modeInstruction}
 
-      TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ (Không kèm lời dẫn, không bọc trong markdown):
+      TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON HỢP LỆ (Không kèm lời dẫn, không bọc markdown ```json):
       {
         "word": "${word}",
         "ipa": "/phiên_âm/",
@@ -48,17 +56,13 @@ export async function POST(req: Request) {
         "vietnamese_meaning": "Nghĩa tiếng Việt chính xác nhất",
         "examples": [
           {
-            "en": "Câu ví dụ bằng tiếng Anh 1",
-            "vi": "Dịch nghĩa tiếng Việt 1",
-            "band": "IELTS 7.5+"
-          },
-          {
-            "en": "Câu ví dụ bằng tiếng Anh 2",
-            "vi": "Dịch nghĩa tiếng Việt 2"
+            "level": "Tên cấp độ (VD: Sơ cấp Công sở / Band 7.0 - 7.5...)",
+            "en": "Câu ví dụ tiếng Anh",
+            "vi": "Dịch nghĩa tiếng Việt"
           }
         ]
       }
-      Lưu ý: Chỉ thêm trường "band" trong object ví dụ nếu mode đang chọn là IELTS. Chuỗi JSON trả về phải hoàn toàn chuẩn mực, không chứa comment (//).
+      Lưu ý: Đảm bảo chuỗi JSON hoàn toàn hợp lệ, không chứa comment (//).
     `;
 
     const completion = await groq.chat.completions.create({

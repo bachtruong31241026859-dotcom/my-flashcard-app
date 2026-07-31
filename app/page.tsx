@@ -1,27 +1,71 @@
 'use client';
-import React, { useState, useEffect } from 'react';
-import { Volume2, RotateCw, TreePine, Droplets, Shield, Sparkles, Edit3, Save, Search, Check, AlertTriangle, UserCheck, Lock } from 'lucide-react';
+import React, { useState } from 'react';
+import { Volume2, RotateCw, TreePine, Droplets, Shield, Sparkles, Edit3, Save, Search, Loader2 } from 'lucide-react';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'flashcard' | 'tree' | 'admin'>('flashcard');
   const [role, setRole] = useState<'free' | 'vip'>('free');
-  const [freeWordCount, setFreeWordCount] = useState(2);
+  const [freeWordCount, setFreeWordCount] = useState(1);
   const [inputWord, setInputWord] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const [isFlipped, setIsFlipped] = useState(false);
   const [selectedBand, setSelectedBand] = useState<'4.0' | '6.0' | '8.0'>('6.0');
   const [waterDrops, setWaterDrops] = useState(145);
-  const [isTimerActive, setIsTimerActive] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
-  const [customMeaning, setCustomMeaning] = useState('Giảm nhẹ, làm bớt gay gắt (nguy cơ, thiệt hại)');
 
-  const currentWord = {
+  // Dữ liệu từ vựng hiện tại (mặc định hoặc từ AI trả về)
+  const [currentWord, setCurrentWord] = useState<any>({
     word: 'mitigate',
     ipa: '/ˈmɪt.ɪ.ɡeɪt/',
-    partOfSpeech: 'verb',
-    examples: {
-      '4.0': { sentence: 'We need to mitigate the damage after the storm.', translation: 'Chúng ta cần giảm nhẹ thiệt hại sau cơn bão.' },
-      '6.0': { sentence: 'The government implemented strict policies to mitigate environmental pollution.', translation: 'Chính phủ đã thực thi các chính sách nghiêm ngặt để giảm thiểu ô nhiễm môi trường.' },
-      '8.0': { sentence: 'Effective risk management strategies are imperative to mitigate adverse global economic volatility.', translation: 'Các chiến lược quản lý rủi ro hiệu quả là bắt buộc để giảm thiểu tác động bất lợi từ sự biến động kinh tế toàn cầu.' }
+    part_of_speech: 'verb',
+    vietnamese_meaning: 'Giảm nhẹ, làm bớt gay gắt (nguy cơ, thiệt hại)',
+    examples_json: {
+      examples: [
+        { band: '4.0', sentence: 'We need to mitigate the damage after the storm.', translation: 'Chúng ta cần giảm nhẹ thiệt hại sau cơn bão.' },
+        { band: '6.0', sentence: 'The government implemented strict policies to mitigate environmental pollution.', translation: 'Chính phủ đã thực thi các chính sách nghiêm ngặt để giảm thiểu ô nhiễm môi trường.' },
+        { band: '8.0', sentence: 'Effective risk management strategies are imperative to mitigate adverse global economic volatility.', translation: 'Các chiến lược quản lý rủi ro hiệu quả là bắt buộc để giảm thiểu tác động bất lợi từ sự biến động kinh tế toàn cầu.' }
+      ]
+    }
+  });
+
+  const [customMeaning, setCustomMeaning] = useState(currentWord.vietnamese_meaning);
+  const [cacheSource, setCacheSource] = useState<string | null>(null);
+
+  // HÀM GỌI API TRA TỪ THẬT TỪ GEMINI / SUPABASE
+  const handleSearch = async () => {
+    if (!inputWord.trim()) return;
+    setLoading(true);
+    setErrorMessage('');
+    setIsFlipped(false);
+
+    try {
+      const response = await fetch('/api/generate-word', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          word: inputWord.trim(),
+          user_id: '00000000-0000-0000-0000-000000000001' // ID người dùng demo
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Có lỗi xảy ra khi tra từ');
+      }
+
+      setCurrentWord(result.data);
+      setCustomMeaning(result.data.vietnamese_meaning);
+      setCacheSource(result.source === 'cache_hit' ? 'Global Cache Hit (Miễn phí API)' : 'AI Gemini vừa phân tích xong!');
+      
+      if (role === 'free' && result.source !== 'cache_hit') {
+        setFreeWordCount((prev) => Math.min(prev + 1, 3));
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Không thể kết nối đến máy chủ AI');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -31,6 +75,11 @@ export default function Home() {
       utterance.lang = 'en-US';
       window.speechSynthesis.speak(utterance);
     }
+  };
+
+  const getExampleByBand = (band: string) => {
+    const list = currentWord.examples_json?.examples || [];
+    return list.find((ex: any) => ex.band === band) || list[0] || { sentence: 'Chưa có ví dụ', translation: '' };
   };
 
   return (
@@ -81,29 +130,48 @@ export default function Home() {
                   )}
                 </span>
               </div>
-              <span className="text-xs bg-emerald-950 text-emerald-300 border border-emerald-800 px-3 py-1 rounded-full flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5" /> Global Cache Hit (Miễn phí API)
-              </span>
+              {cacheSource && (
+                <span className="text-xs bg-emerald-950 text-emerald-300 border border-emerald-800 px-3 py-1 rounded-full flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5" /> {cacheSource}
+                </span>
+              )}
             </div>
 
             {/* Ô nhập từ vựng */}
             <div className="flex gap-2">
-              <input type="text" placeholder="Nhập từ tiếng Anh (VD: mitigate, meticulous)..." value={inputWord} onChange={(e) => setInputWord(e.target.value)} className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500" />
-              <button className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-6 py-3 rounded-xl transition-all">
-                Tra Từ AI
+              <input
+                type="text"
+                placeholder="Nhập từ tiếng Anh (VD: accountant, meticulous)..."
+                value={inputWord}
+                onChange={(e) => setInputWord(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500"
+              />
+              <button
+                onClick={handleSearch}
+                disabled={loading}
+                className="bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-700 text-slate-950 font-bold px-6 py-3 rounded-xl transition-all flex items-center gap-2"
+              >
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Tra Từ AI'}
               </button>
             </div>
 
+            {errorMessage && (
+              <div className="bg-rose-950/80 border border-rose-800 text-rose-300 p-3 rounded-xl text-sm">
+                ⚠️ {errorMessage}
+              </div>
+            )}
+
             {/* Thẻ Flashcard Lật Mặt */}
             <div className="perspective-1000 min-h-[360px] relative">
-              <div className={`w-full min-h-[360px] bg-slate-800 border border-slate-700 rounded-2xl p-8 flex flex-col justify-between shadow-2xl transition-all duration-500 ${isFlipped ? 'bg-slate-800/90' : ''}`}>
+              <div className={`w-full min-h-[360px] bg-slate-800 border border-slate-700 rounded-2xl p-8 flex flex-col justify-between shadow-2xl transition-all duration-500`}>
                 {!isFlipped ? (
                   // Mặt trước thẻ
                   <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4">
                     <span className="text-xs bg-slate-700 text-slate-300 px-3 py-1 rounded-full uppercase tracking-widest">
-                      {currentWord.partOfSpeech}
+                      {currentWord.part_of_speech || currentWord.partOfSpeech}
                     </span>
-                    <h2 className="text-5xl font-extrabold text-white tracking-wide">{currentWord.word}</h2>
+                    <h2 className="text-5xl font-extrabold text-white tracking-wide capitalize">{currentWord.word}</h2>
                     <p className="text-slate-400 text-lg">{currentWord.ipa}</p>
                     <button onClick={speakWord} className="p-3 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 rounded-full transition-all">
                       <Volume2 className="w-6 h-6" />
@@ -142,8 +210,8 @@ export default function Home() {
                           </button>
                         ))}
                       </div>
-                      <p className="text-lg text-slate-200 italic">"{currentWord.examples[selectedBand].sentence}"</p>
-                      <p className="text-sm text-slate-400">👉 {currentWord.examples[selectedBand].translation}</p>
+                      <p className="text-lg text-slate-200 italic">"{getExampleByBand(selectedBand).sentence}"</p>
+                      <p className="text-sm text-slate-400">👉 {getExampleByBand(selectedBand).translation}</p>
                     </div>
                   </div>
                 )}
@@ -175,12 +243,11 @@ export default function Home() {
         {activeTab === 'tree' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Cột 1: Đồng hồ & Anti-cheat */}
               <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 space-y-6">
                 <div className="flex justify-between items-center">
                   <h3 className="font-bold text-lg text-emerald-400">Đồng Hồ Tích Giọt Nước</h3>
-                  <span className={`text-xs px-2.5 py-1 rounded-full flex items-center gap-1 ${isTimerActive ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-amber-950 text-amber-400 border border-amber-800'}`}>
-                    <Shield className="w-3.5 h-3.5" /> {isTimerActive ? 'Anti-cheat: Đang tính giờ' : 'Tạm dừng (Không tương tác)'}
+                  <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 flex items-center gap-1">
+                    <Shield className="w-3.5 h-3.5" /> Anti-cheat: Đang tính giờ
                   </span>
                 </div>
 
@@ -203,7 +270,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Cột 2: Tiến trình Cây */}
               <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 space-y-6 flex flex-col justify-between">
                 <div>
                   <div className="flex justify-between items-center mb-4">
@@ -213,7 +279,6 @@ export default function Home() {
                     </span>
                   </div>
 
-                  {/* Thanh tiến trình */}
                   <div className="space-y-2 mb-6">
                     <div className="flex justify-between text-xs text-slate-400">
                       <span>Mầm non (30 giọt)</span>
@@ -227,31 +292,8 @@ export default function Home() {
                   <div className="text-center py-8">
                     <TreePine className="w-32 h-32 text-emerald-400 mx-auto animate-bounce" />
                     <p className="mt-4 text-slate-300 font-medium">Cây của bạn đang phát triển rất khỏe mạnh!</p>
-                    <p className="text-xs text-slate-500 mt-1">Cảnh báo: Nếu 3 ngày không học cây sẽ héo nhẹ, 7 ngày cây sẽ chết.</p>
                   </div>
                 </div>
-              </div>
-            </div>
-
-            {/* Bảng Xếp Hạng Top 5 */}
-            <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6">
-              <h3 className="font-bold text-lg text-emerald-400 mb-4">🏆 Bảng Xếp Hạng Chăm Cây (Top 5)</h3>
-              <div className="space-y-3">
-                {[
-                  { rank: 1, email: 'minh.tran***@gmail.com', drops: 1250, badge: '🥇' },
-                  { rank: 2, email: 'lan.nguyen***@gmail.com', drops: 980, badge: '🥈' },
-                  { rank: 3, email: 'hoang.pham***@gmail.com', drops: 840, badge: '🥉' },
-                  { rank: 4, email: 'you@app.com', drops: waterDrops, badge: '4' },
-                  { rank: 5, email: 'duc.anh***@gmail.com', drops: 110, badge: '5' },
-                ].map((item) => (
-                  <div key={item.rank} className="flex justify-between items-center bg-slate-900 p-3 rounded-xl border border-slate-700/50">
-                    <div className="flex items-center gap-3">
-                      <span className="w-8 h-8 flex items-center justify-center font-bold text-slate-300">{item.badge}</span>
-                      <span className="text-sm font-medium text-slate-200">{item.email}</span>
-                    </div>
-                    <span className="text-emerald-400 font-bold text-sm">{item.drops} giọt nước</span>
-                  </div>
-                ))}
               </div>
             </div>
           </div>
@@ -260,48 +302,7 @@ export default function Home() {
         {activeTab === 'admin' && (
           <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 space-y-6">
             <h3 className="font-bold text-lg text-emerald-400">⚙️ Admin Panel - Quản Lý Membership Học Viên</h3>
-            
-            <div className="flex gap-2">
-              <input type="text" placeholder="Tìm kiếm theo email học viên..." className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-white focus:outline-none" />
-              <button className="bg-slate-700 text-slate-200 px-4 py-2 rounded-xl flex items-center gap-2">
-                <Search className="w-4 h-4" /> Tìm
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-slate-300">
-                <thead className="bg-slate-900 text-slate-400 uppercase text-xs">
-                  <tr>
-                    <th className="p-3">Email Học Viên</th>
-                    <th className="p-3">Loại Tài Khoản</th>
-                    <th className="p-3">Số Giọt Nước</th>
-                    <th className="p-3">Thao Tác Kích Hoạt VietQR</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700">
-                  <tr>
-                    <td className="p-3 font-medium text-white">student1@gmail.com</td>
-                    <td className="p-3"><span className="bg-slate-700 px-2 py-1 rounded text-xs">Free</span></td>
-                    <td className="p-3 text-cyan-400 font-bold">45 giọt</td>
-                    <td className="p-3">
-                      <button onClick={() => alert('Đã kích hoạt VIP 30 ngày cho student1@gmail.com')} className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-xs">
-                        ⚡ Kích hoạt VIP (30 ngày)
-                      </button>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="p-3 font-medium text-white">vipmember@gmail.com</td>
-                    <td className="p-3"><span className="bg-amber-500/20 text-amber-300 border border-amber-500/50 px-2 py-1 rounded text-xs">VIP</span></td>
-                    <td className="p-3 text-cyan-400 font-bold">820 giọt</td>
-                    <td className="p-3">
-                      <button onClick={() => alert('Đã hủy quyền VIP')} className="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded-lg text-xs">
-                        Hủy VIP
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <p className="text-slate-400 text-sm">Giao diện quản lý kích hoạt VIP cho học viên qua chuyển khoản VietQR.</p>
           </div>
         )}
       </main>

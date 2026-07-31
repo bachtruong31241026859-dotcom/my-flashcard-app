@@ -3,18 +3,33 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// 1. API Lưu từ vựng mới
-export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-    const { word, ipa, part_of_speech, partOfSpeech, vietnamese_meaning, examples_json, user_id } = body;
+// GET: Lấy danh sách từ vựng
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const userId = searchParams.get('user_id');
 
-    if (!word) {
-      return NextResponse.json({ error: 'Từ vựng không được để trống' }, { status: 400 });
-    }
+  let query = supabase.from('flashcards').select('*').order('created_at', { ascending: false });
+
+  if (userId) {
+    query = query.eq('user_id', userId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ data });
+}
+
+// POST: Tạo từ vựng mới
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { word, ipa, part_of_speech, vietnamese_meaning, examples_json, user_id } = body;
 
     const { data, error } = await supabase
       .from('flashcards')
@@ -22,10 +37,12 @@ export async function POST(req: Request) {
         {
           word,
           ipa,
-          part_of_speech: part_of_speech || partOfSpeech,
+          part_of_speech,
           vietnamese_meaning,
           examples_json,
           user_id: user_id || null,
+          status: 'learning',
+          last_reviewed: new Date().toISOString(),
         },
       ])
       .select();
@@ -36,52 +53,53 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, data });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Lỗi hệ thống' }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
-// 2. API Lấy danh sách từ vựng đã lưu (Lọc theo user_id nếu có)
-export async function GET(req: Request) {
+// PATCH: Cập nhật trạng thái Nhớ/Quên (learning/mastered)
+export async function PATCH(request: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const userId = searchParams.get('user_id');
+    const body = await request.json();
+    const { id, status } = body;
 
-    let query = supabase.from('flashcards').select('*').order('created_at', { ascending: false });
-
-    if (userId) {
-      query = query.eq('user_id', userId);
+    if (!id || !status) {
+      return NextResponse.json({ error: 'Thiếu id hoặc status' }, { status: 400 });
     }
 
-    const { data, error } = await query;
+    const { data, error } = await supabase
+      .from('flashcards')
+      .update({
+        status,
+        last_reviewed: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select();
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ data });
+    return NextResponse.json({ success: true, data });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Lỗi hệ thống' }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
 
-// 3. API Xóa từ vựng
-export async function DELETE(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get('id');
+// DELETE: Xóa từ vựng
+export async function DELETE(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get('id');
 
-    if (!id) {
-      return NextResponse.json({ error: 'Thiếu ID từ vựng' }, { status: 400 });
-    }
-
-    const { error } = await supabase.from('flashcards').delete().eq('id', id);
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ success: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Lỗi hệ thống' }, { status: 500 });
+  if (!id) {
+    return NextResponse.json({ error: 'Thiếu id để xóa' }, { status: 400 });
   }
+
+  const { error } = await supabase.from('flashcards').delete().eq('id', id);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
 }

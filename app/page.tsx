@@ -73,7 +73,7 @@ export default function Home() {
       }
     } catch (err) {
       console.error('Lỗi khi tải từ vựng:', err);
-    } finally {
+    } font-medium {
       setLoadingCards(false);
     }
   };
@@ -212,16 +212,14 @@ export default function Home() {
     return card.part_of_speech?.includes(tagMap[cardFilter as keyof typeof tagMap]);
   });
 
-  // Thuật toán Ôn tập thông minh (Ưu tiên từ 'learning' & lâu chưa ôn)
+  // Thuật toán Ôn tập thông minh
   const startPractice = () => {
     if (savedCards.length === 0) return;
 
     const cardsToPractice = [...savedCards].sort((a, b) => {
-      // Ưu tiên 1: Từ chưa thuộc ('learning') đứng trước từ đã thuộc ('mastered')
       if ((a.status || 'learning') === 'learning' && b.status === 'mastered') return -1;
       if (a.status === 'mastered' && (b.status || 'learning') === 'learning') return 1;
 
-      // Ưu tiên 2: Từ nào lâu chưa ôn tập hơn sẽ đứng trước
       const timeA = new Date(a.last_reviewed || 0).getTime();
       const timeB = new Date(b.last_reviewed || 0).getTime();
       return timeA - timeB;
@@ -235,7 +233,7 @@ export default function Home() {
     setPracticeFinished(false);
   };
 
-  // Xử lý khi bấm Nhớ/Quên -> Lưu ngay vào Database
+  // Xử lý khi bấm Nhớ/Quên -> Lưu vào Database
   const handleAnswer = async (remembered: boolean) => {
     const currentCard = practiceQueue[practiceIndex];
     if (!currentCard) return;
@@ -248,7 +246,6 @@ export default function Home() {
       setForgottenCount((prev) => prev + 1);
     }
 
-    // Cập nhật lên Database Supabase
     try {
       await fetch('/api/flashcards', {
         method: 'PATCH',
@@ -259,7 +256,6 @@ export default function Home() {
         }),
       });
 
-      // Cập nhật lại state local
       setSavedCards((prev) =>
         prev.map((card) =>
           card.id === currentCard.id
@@ -271,7 +267,6 @@ export default function Home() {
       console.error('Không thể lưu trạng thái ôn tập:', err);
     }
 
-    // Chuyển sang thẻ tiếp theo
     if (practiceIndex + 1 < practiceQueue.length) {
       setIsPracticeFlipped(false);
       setPracticeIndex((prev) => prev + 1);
@@ -476,7 +471,6 @@ export default function Home() {
             <div className="flex flex-wrap justify-between items-center gap-4">
               <h2 className="text-xl font-bold text-white">🎴 Thẻ từ vựng của bạn</h2>
 
-              {/* BỘ LỌC NÂNG CAO */}
               <div className="flex bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs font-medium flex-wrap gap-1">
                 <button
                   onClick={() => setCardFilter('all')}
@@ -540,7 +534,6 @@ export default function Home() {
                               {card.part_of_speech || 'Vocabulary'}
                             </span>
                             <div className="flex items-center gap-2">
-                              {/* STATUS BADGE */}
                               <span
                                 className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
                                   isMastered
@@ -733,17 +726,15 @@ export default function Home() {
                 <div className="grid grid-cols-2 gap-4 pt-2">
                   <button
                     onClick={() => handleAnswer(false)}
-                    disabled={!isPracticeFlipped}
-                    className="bg-slate-800 hover:bg-red-950/60 border border-red-500/40 text-red-400 font-bold py-3.5 rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2"
                   >
-                    ❌ Quên Rồi (Học lại)
+                    ❌ Chưa Nhớ
                   </button>
                   <button
                     onClick={() => handleAnswer(true)}
-                    disabled={!isPracticeFlipped}
-                    className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3.5 rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-40 shadow-lg disabled:cursor-not-allowed"
+                    className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3.5 px-4 rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
                   >
-                    ✅ Đã Nhớ (Đã thuộc)
+                    ✅ Đã Nhớ
                   </button>
                 </div>
               </div>
@@ -752,71 +743,58 @@ export default function Home() {
         )}
       </main>
 
-      {/* AUTH MODAL */}
+      {/* MODAL ĐĂNG NHẬP / ĐĂNG KÝ */}
       {showAuthModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl max-w-sm w-full p-6 shadow-2xl relative">
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
             <button
               onClick={() => setShowAuthModal(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+              className="absolute top-4 right-4 text-slate-400 hover:text-white text-lg font-bold"
             >
               ✕
             </button>
-
-            <h2 className="text-xl font-bold text-white text-center mb-4">
-              {authMode === 'login' ? 'Đăng Nhập' : 'Đăng ký tài khoản'}
-            </h2>
-
+            <h3 className="text-xl font-bold text-white mb-4">
+              {authMode === 'login' ? '🔑 Đăng Nhập' : '📝 Đăng Ký Tài Khoản'}
+            </h3>
             <form onSubmit={handleAuthSubmit} className="space-y-4">
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Email</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Email</label>
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  placeholder="your@email.com"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500"
                 />
               </div>
-
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Mật khẩu</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Mật khẩu</label>
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500"
                 />
               </div>
-
               <button
                 type="submit"
                 disabled={authLoading}
-                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-2.5 rounded-xl transition text-sm disabled:opacity-50"
+                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 rounded-xl transition disabled:opacity-50"
               >
                 {authLoading ? 'Đang xử lý...' : authMode === 'login' ? 'Đăng Nhập' : 'Đăng Ký'}
               </button>
             </form>
-
             <div className="mt-4 text-center">
-              {authMode === 'login' ? (
-                <p className="text-xs text-slate-400">
-                  Chưa có tài khoản?{' '}
-                  <button onClick={() => setAuthMode('signup')} className="text-emerald-400 hover:underline">
-                    Đăng ký ngay
-                  </button>
-                </p>
-              ) : (
-                <p className="text-xs text-slate-400">
-                  Đã có tài khoản?{' '}
-                  <button onClick={() => setAuthMode('login')} className="text-emerald-400 hover:underline">
-                    Đăng nhập
-                  </button>
-                </p>
-              )}
+              <button
+                type="button"
+                onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
+                className="text-xs text-slate-400 hover:text-emerald-400 underline"
+              >
+                {authMode === 'login' ? 'Chưa có tài khoản? Đăng ký ngay' : 'Đã có tài khoản? Đăng nhập'}
+              </button>
             </div>
           </div>
         </div>

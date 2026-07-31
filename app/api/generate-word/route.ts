@@ -9,76 +9,70 @@ export async function POST(req: Request) {
     }
 
     const cleanWord = word.trim().toLowerCase();
-    let apiKey = process.env.GEMINI_API_KEY || '';
-    
-    // Tự động dọn dẹp ký tự thừa hoặc dấu ngoặc kép nếu có
-    apiKey = apiKey.trim().replace(/^["']|["']$/g, '');
+    const apiKey = process.env.GROQ_API_KEY || '';
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'Chưa tìm thấy GEMINI_API_KEY trên Vercel.' },
+        { error: 'Chưa cấu hình GROQ_API_KEY trên Vercel.' },
         { status: 500 }
       );
     }
 
-    const prompt = `Bạn là một chuyên gia IELTS. Hãy phân tích từ tiếng Anh "${cleanWord}" và trả về duy nhất một chuỗi JSON hợp lệ theo đúng cấu trúc sau (không kèm markdown codeblock \`\`\`json):
+    const systemPrompt = `Bạn là chuyên gia IELTS. Nhiệm vụ của bạn là phân tích từ tiếng Anh và trả về duy nhất một đối tượng JSON chuẩn xác theo cấu trúc yêu cầu. Không thêm bất kỳ lời dẫn hay mã markdown nào khác.`;
+
+    const userPrompt = `Hãy phân tích từ "${cleanWord}" và trả về JSON theo đúng định dạng sau:
 {
   "word": "${cleanWord}",
   "ipa": "/phiên âm/",
-  "part_of_speech": "loại từ (noun/verb/adjective/adverb)",
-  "vietnamese_meaning": "nghĩa tiếng Việt chính xác",
+  "part_of_speech": "loại từ",
+  "vietnamese_meaning": "nghĩa tiếng Việt",
   "examples_json": {
     "examples": [
       { "band": "4.0", "sentence": "câu ví dụ band 4.0", "translation": "dịch Việt" },
       { "band": "6.0", "sentence": "câu ví dụ band 6.0", "translation": "dịch Việt" },
-      { "band": "8.0", "sentence": "câu ví dụ band 8.0 với từ vựng xịn", "translation": "dịch Việt" }
+      { "band": "8.0", "sentence": "câu ví dụ band 8.0 nâng cao", "translation": "dịch Việt" }
     ]
   }
 }`;
 
-    // Thử các tên model chính thức của Gemini
-    const models = ['gemini-1.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.0-flash'];
-    let lastErrorDetails = '';
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.3,
+        response_format: { type: 'json_object' } // Ép Groq trả về JSON sạch 100%
+      })
+    });
 
-    for (const model of models) {
-      // ĐIỂM MẤT CHỐT: Gắn thẳng API Key vào tham số ?key= của URL
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-      
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }]
-          })
-        });
+    const data = await res.json();
 
-        const data = await res.json();
-
-        if (res.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-          const text = data.candidates[0].content.parts[0].text;
-          const cleanedJsonText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-          const responseData = JSON.parse(cleanedJsonText);
-          
-          return NextResponse.json({
-            success: true,
-            source: 'ai_generated',
-            data: responseData
-          });
-        } else {
-          lastErrorDetails = `[${model} - Code ${res.status}]: ${data.error?.message || JSON.stringify(data)}`;
-        }
-      } catch (e: any) {
-        lastErrorDetails = `[${model} Exception]: ${e.message}`;
-      }
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: `Lỗi Groq API [${res.status}]: ${data.error?.message || 'Không thể tra từ'}` },
+        { status: res.status }
+      );
     }
 
-    return NextResponse.json(
-      { error: `Google AI từ chối: ${lastErrorDetails}` },
-      { status: 500 }
-    );
+    const rawContent = data.choices?.[0]?.message?.content;
+    if (!rawContent) {
+      return NextResponse.json({ error: 'AI không trả về dữ liệu' }, { status: 500 });
+    }
+
+    const parsedData = JSON.parse(rawContent);
+
+    return NextResponse.json({
+      success: true,
+      source: 'groq_generated',
+      data: parsedData
+    });
 
   } catch (error: any) {
     return NextResponse.json(
